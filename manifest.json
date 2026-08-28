@@ -1,0 +1,19 @@
+{
+  "name": "Expense Tracker",
+  "short_name": "Expenses",
+  "description": "Tagging-based personal expense tracker for reconciling spend against card statements.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f1ea",
+  "theme_color": "#1b6f5c",
+  "icons": [
+    {
+      "src": "icons/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}

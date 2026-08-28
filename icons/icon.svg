@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="24" fill="#1b6f5c"/>
+  <g fill="none" stroke="#f4f1ea" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="28" y="34" width="72" height="60" rx="8"/>
+    <line x1="28" y1="54" x2="100" y2="54"/>
+    <line x1="42" y1="70" x2="62" y2="70"/>
+    <line x1="42" y1="82" x2="54" y2="82"/>
+  </g>
+  <circle cx="86" cy="80" r="14" fill="#f4a300"/>
+  <text x="86" y="86" font-family="sans-serif" font-size="17" font-weight="700" text-anchor="middle" fill="#1b6f5c">₹</text>
+</svg>
