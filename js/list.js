@@ -36,10 +36,14 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh }
 
   const row = el('div', { class: 'txn-row' + (mismatch ? ' txn-mismatch' : '') });
 
+  // Fall back to the first line item's description when the transaction
+  // itself has none — common when a single-item purchase gets its
+  // description typed on the item row instead of the transaction row.
+  const displayDesc = txn.description || (txn.lineItems[0] && txn.lineItems[0].description) || '—';
   const header = el('div', { class: 'txn-row-header' }, [
     el('span', { class: 'txn-date' }, txn.date),
     el('span', { class: 'txn-account' }, account ? account.name : '(deleted account)'),
-    el('span', { class: 'txn-desc' }, txn.description || '—'),
+    el('span', { class: 'txn-desc' }, displayDesc),
     el('span', { class: `txn-amount ${txn.type === 'income' ? 'amount-income' : 'amount-expense'}` }, formatINR(txn.statedTotal ?? sum)),
   ]);
   if (mismatch) {

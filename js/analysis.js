@@ -208,7 +208,7 @@ function renderReconciliation(section, txns, accountsById, navigate) {
         el('div', { class: 'txn-row-header' }, [
           el('span', { class: 'txn-date' }, t.date),
           el('span', { class: 'txn-account' }, acc ? acc.name : '(deleted account)'),
-          el('span', { class: 'txn-desc' }, t.description || '—'),
+          el('span', { class: 'txn-desc' }, t.description || (t.lineItems[0] && t.lineItems[0].description) || '—'),
           el('span', { class: 'badge badge-warning' }, `Stated ${formatINR(t.statedTotal)} vs items ${formatINR(sum)}`),
           editBtn,
         ]),
