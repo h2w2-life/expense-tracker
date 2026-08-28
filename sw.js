@@ -1,6 +1,8 @@
-// Cache-first service worker for the static app shell — lets the PWA work
-// fully offline once installed. Only serves files that ship in this repo,
-// no live CDN dependencies to worry about.
+// Network-first service worker for the static app shell. Always tries the
+// network first so a normal reload picks up the latest deployed files —
+// falls back to the cached copy only when the network request fails (i.e.
+// actually offline), which is what makes the installed PWA still usable
+// with no server running.
 
 const CACHE_NAME = 'expense-tracker-v1';
 const APP_SHELL = [
@@ -43,17 +45,14 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request)
-        .then((response) => {
-          if (response.ok && response.type === 'basic') {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || fetchPromise;
-    })
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok && response.type === 'basic') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
