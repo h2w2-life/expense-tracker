@@ -3,30 +3,61 @@
 
 import { listTransactionsWithLineItems, listAccounts, listTags, deleteTransaction } from './db.js';
 import { formatINR } from './money.js';
-import { el } from './dom.js';
+import { el, field } from './dom.js';
+
+function todayISO() {
+  const d = new Date();
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d - tz).toISOString().slice(0, 10);
+}
+
+function startOfMonthISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
 
 export async function render(container, ctx) {
   const { notify, navigate } = ctx;
   container.innerHTML = '';
   const root = el('div', { class: 'view list-view' });
   root.appendChild(el('h2', {}, 'Transactions'));
+
+  const fromInput = el('input', { type: 'date', value: startOfMonthISO() });
+  const toInput = el('input', { type: 'date', value: todayISO() });
+  root.appendChild(el('div', { class: 'card filter-bar' }, [field('From', fromInput), field('To', toInput)]));
+
   const listEl = el('div', { class: 'txn-list' });
   root.appendChild(listEl);
   container.appendChild(root);
 
-  const [txns, accounts, tags] = await Promise.all([listTransactionsWithLineItems(), listAccounts(), listTags()]);
+  let [txns, accounts, tags] = await Promise.all([listTransactionsWithLineItems(), listAccounts(), listTags()]);
   const accountsById = new Map(accounts.map((a) => [a.id, a]));
   const tagsById = new Map(tags.map((t) => [t.id, t.name]));
 
-  if (txns.length === 0) {
-    listEl.appendChild(el('p', { class: 'empty-state' }, 'No transactions yet. Add one from the Add tab.'));
-    return;
+  function renderList() {
+    listEl.innerHTML = '';
+    const from = fromInput.value;
+    const to = toInput.value;
+    const filtered = txns.filter((t) => (!from || t.date >= from) && (!to || t.date <= to));
+    if (filtered.length === 0) {
+      const message = txns.length === 0 ? 'No transactions yet. Add one from the Add tab.' : 'No transactions in this date range.';
+      listEl.appendChild(el('p', { class: 'empty-state' }, message));
+      return;
+    }
+    for (const txn of filtered) {
+      listEl.appendChild(renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh }));
+    }
   }
 
-  const refresh = () => render(container, ctx);
-  for (const txn of txns) {
-    listEl.appendChild(renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh }));
+  async function refresh() {
+    txns = await listTransactionsWithLineItems();
+    renderList();
   }
+
+  fromInput.addEventListener('change', renderList);
+  toInput.addEventListener('change', renderList);
+
+  renderList();
 }
 
 function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh }) {
