@@ -22,10 +22,15 @@ function notify(message, type = 'info') {
   }, 3500);
 }
 
+let selfInitiatedHashChange = false;
+
 async function activate(name, params = {}) {
   if (!views[name]) name = 'entry';
   for (const btn of tabButtons) btn.classList.toggle('active', btn.dataset.view === name);
-  if (window.location.hash.slice(1) !== name) window.location.hash = name;
+  if (window.location.hash.slice(1) !== name) {
+    selfInitiatedHashChange = true;
+    window.location.hash = name;
+  }
   try {
     await views[name].render(container, { notify, navigate: activate, params });
   } catch (err) {
@@ -38,7 +43,18 @@ for (const btn of tabButtons) {
   btn.addEventListener('click', () => activate(btn.dataset.view));
 }
 
+// Only react to hash changes the user (or browser back/forward) caused
+// directly — e.g. a manually edited/bookmarked #list URL, or Alt+Left after
+// following a link. Ignore the hashchange our own `activate()` just fired
+// via `window.location.hash = name` above, otherwise it re-renders the
+// target view with no params and silently drops things like the entry
+// form's `editId` (see: "Edit" from the transaction list loading a blank
+// Add form instead of the transaction being edited).
 window.addEventListener('hashchange', () => {
+  if (selfInitiatedHashChange) {
+    selfInitiatedHashChange = false;
+    return;
+  }
   const name = window.location.hash.slice(1);
   if (name && views[name]) activate(name);
 });
