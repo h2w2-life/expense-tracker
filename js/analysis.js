@@ -5,6 +5,7 @@
 import { listTransactionsWithLineItems, listAccounts, listTags } from './db.js';
 import { formatINR } from './money.js';
 import { el, field } from './dom.js';
+import { mountTagFilterInput } from './tags.js';
 
 function daysInMonth(year, month) {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -218,44 +219,3 @@ function renderReconciliation(section, txns, accountsById, navigate) {
   section.appendChild(list);
 }
 
-// Multi-select tag chip filter — picks from existing tags only, no free
-// text creation (unlike the entry-form tag input in tags.js).
-function mountTagFilterInput(container, allTags) {
-  const selected = new Set();
-  let changeHandler = () => {};
-  const chipList = el('div', { class: 'tag-chip-list' });
-  const select = el('select', {}, [el('option', { value: '' }, 'Add tag…'), ...allTags.map((t) => el('option', { value: String(t.id) }, t.name))]);
-  container.appendChild(el('div', { class: 'tag-filter' }, [chipList, select]));
-
-  function renderChips() {
-    chipList.innerHTML = '';
-    for (const id of selected) {
-      const tag = allTags.find((t) => t.id === id);
-      if (!tag) continue;
-      const removeBtn = el('button', { type: 'button', class: 'tag-chip-remove' }, '✕');
-      removeBtn.addEventListener('click', () => {
-        selected.delete(id);
-        renderChips();
-        changeHandler();
-      });
-      chipList.appendChild(el('span', { class: 'tag-chip' }, [tag.name, removeBtn]));
-    }
-  }
-
-  select.addEventListener('change', () => {
-    const id = Number(select.value);
-    if (id) {
-      selected.add(id);
-      select.value = '';
-      renderChips();
-      changeHandler();
-    }
-  });
-
-  return {
-    getSelectedIds: () => Array.from(selected),
-    onChange: (fn) => {
-      changeHandler = fn;
-    },
-  };
-}

@@ -4,6 +4,7 @@
 import { listTransactionsWithLineItems, listAccounts, listTags, deleteTransaction } from './db.js';
 import { formatINR } from './money.js';
 import { el, field } from './dom.js';
+import { mountTagFilterInput } from './tags.js';
 
 function todayISO() {
   const d = new Date();
@@ -39,20 +40,27 @@ export async function render(container, ctx) {
   ]);
   if (params.accountId != null) accountFilterSelect.value = String(params.accountId);
 
-  const tagFilterSelect = el('select', {}, [
-    el('option', { value: '' }, 'All tags'),
-    ...tags.map((t) => el('option', { value: String(t.id) }, t.name)),
+  const typeFilterSelect = el('select', {}, [
+    el('option', { value: '' }, 'Expense + income'),
+    el('option', { value: 'expense' }, 'Expense only'),
+    el('option', { value: 'income' }, 'Income only'),
   ]);
-  if (params.tagId != null) tagFilterSelect.value = String(params.tagId);
+
+  const tagFilterMount = el('div', { class: 'tag-filter-mount' });
 
   root.appendChild(
     el('div', { class: 'card filter-bar' }, [
       field('From', fromInput),
       field('To', toInput),
       field('Account', accountFilterSelect),
-      field('Tag', tagFilterSelect),
+      field('Type', typeFilterSelect),
+      field('Tags — must have ALL of', tagFilterMount),
     ])
   );
+
+  const tagWidget = mountTagFilterInput(tagFilterMount, tags, {
+    initialIds: params.tagId != null ? [params.tagId] : [],
+  });
 
   const listEl = el('div', { class: 'txn-list' });
   root.appendChild(listEl);
@@ -63,12 +71,14 @@ export async function render(container, ctx) {
     const from = fromInput.value;
     const to = toInput.value;
     const accountFilter = accountFilterSelect.value ? Number(accountFilterSelect.value) : null;
-    const tagFilter = tagFilterSelect.value ? Number(tagFilterSelect.value) : null;
+    const typeFilter = typeFilterSelect.value || null;
+    const tagFilterIds = tagWidget.getSelectedIds();
     const filtered = txns.filter((t) => {
       if (from && t.date < from) return false;
       if (to && t.date > to) return false;
       if (accountFilter && t.accountId !== accountFilter) return false;
-      if (tagFilter && !t.lineItems.some((li) => li.tagIds.includes(tagFilter))) return false;
+      if (typeFilter && t.type !== typeFilter) return false;
+      if (tagFilterIds.length && !tagFilterIds.every((id) => t.lineItems.some((li) => li.tagIds.includes(id)))) return false;
       return true;
     });
     if (filtered.length === 0) {
@@ -77,7 +87,7 @@ export async function render(container, ctx) {
       return;
     }
     for (const txn of filtered) {
-      listEl.appendChild(renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh }));
+      listEl.appendChild(renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, addTagFilter: tagWidget.addSelectedId }));
     }
   }
 
@@ -89,17 +99,22 @@ export async function render(container, ctx) {
   fromInput.addEventListener('change', renderList);
   toInput.addEventListener('change', renderList);
   accountFilterSelect.addEventListener('change', renderList);
-  tagFilterSelect.addEventListener('change', renderList);
+  typeFilterSelect.addEventListener('change', renderList);
+  tagWidget.onChange(renderList);
 
   renderList();
 }
 
-function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh }) {
+function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, addTagFilter }) {
   const sum = txn.lineItems.reduce((s, li) => s + li.amount, 0);
   const mismatch = txn.statedTotal != null && sum !== txn.statedTotal;
   const account = accountsById.get(txn.accountId);
 
-  const row = el('div', { class: 'txn-row' + (mismatch ? ' txn-mismatch' : '') });
+  // Split transactions (more than one line item) are worth seeing at a
+  // glance without an extra click; single-item ones stay collapsed since
+  // the fallback description already shows what it is.
+  const startExpanded = txn.lineItems.length > 1;
+  const row = el('div', { class: 'txn-row' + (mismatch ? ' txn-mismatch' : '') + (startExpanded ? ' expanded' : '') });
 
   // Fall back to the first line item's description when the transaction
   // itself has none — common when a single-item purchase gets its
@@ -138,7 +153,7 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh }
         const chip = el('button', { type: 'button', class: 'tag-chip tag-chip-link' }, tagsById.get(id));
         chip.addEventListener('click', (e) => {
           e.stopPropagation();
-          navigate('list', { tagId: id });
+          addTagFilter(id);
         });
         return chip;
       });

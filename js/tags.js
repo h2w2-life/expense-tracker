@@ -105,3 +105,65 @@ export function mountTagInput(container, opts = {}) {
     destroy: () => wrap.remove(),
   };
 }
+
+/**
+ * Multi-select tag-chip filter — picks from existing tags only (no free-text
+ * creation, unlike mountTagInput above). Used wherever a view needs an
+ * "AND across these tags" style filter (Analysis's AND/NOT groups,
+ * Transactions tab tag filter).
+ * @param {HTMLElement} container
+ * @param {{id: number, name: string}[]} allTags
+ * @param {{ initialIds?: number[] }} [opts]
+ * @returns {{ getSelectedIds(): number[], addSelectedId(id: number): void, onChange(fn: () => void): void }}
+ */
+export function mountTagFilterInput(container, allTags, opts = {}) {
+  const selected = new Set(opts.initialIds || []);
+  let changeHandler = () => {};
+  const chipList = el('div', { class: 'tag-chip-list' });
+  const select = el('select', {}, [
+    el('option', { value: '' }, 'Add tag…'),
+    ...allTags.map((t) => el('option', { value: String(t.id) }, t.name)),
+  ]);
+  container.appendChild(el('div', { class: 'tag-filter' }, [chipList, select]));
+
+  function renderChips() {
+    chipList.innerHTML = '';
+    for (const id of selected) {
+      const tag = allTags.find((t) => t.id === id);
+      if (!tag) continue;
+      const removeBtn = el('button', { type: 'button', class: 'tag-chip-remove' }, '✕');
+      removeBtn.addEventListener('click', () => {
+        selected.delete(id);
+        renderChips();
+        changeHandler();
+      });
+      chipList.appendChild(el('span', { class: 'tag-chip' }, [tag.name, removeBtn]));
+    }
+  }
+
+  select.addEventListener('change', () => {
+    const id = Number(select.value);
+    if (id) {
+      selected.add(id);
+      select.value = '';
+      renderChips();
+      changeHandler();
+    }
+  });
+
+  renderChips();
+
+  return {
+    getSelectedIds: () => Array.from(selected),
+    addSelectedId: (id) => {
+      if (!selected.has(id)) {
+        selected.add(id);
+        renderChips();
+        changeHandler();
+      }
+    },
+    onChange: (fn) => {
+      changeHandler = fn;
+    },
+  };
+}

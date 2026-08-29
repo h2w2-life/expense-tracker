@@ -57,22 +57,36 @@ Given expected volume (hundreds/month → low thousands of rows even after a few
 
 ## 6. Feature / status tracker
 
-Planned file layout (vanilla JS, ES modules, one module per concern):
-`js/dom.js` (tiny DOM-builder helper + `field()` label-association helper, shared by every view) · `js/money.js` (paise↔rupee helpers, INR formatting) · `js/calc.js` (safe arithmetic expression evaluator, no `eval()`) · `js/db.js` (IndexedDB layer per §5) · `js/tags.js` (reusable tag-chip autocomplete input widget) · `js/entry.js` (add/edit transaction form + inline account creation) · `js/list.js` (transaction list, edit/delete, reconciliation-mismatch indicator) · `js/analysis.js` (monthly summary, by-account, tag AND/NOT filter, statement-cycle filter, needs-reconciliation list) · `js/backup.js` (JSON export/import) · `js/settings.js` (account + tag management UI, wires up backup.js's export/import buttons — added during the build; the original plan didn't list it separately, but `index.html`'s Settings tab needed a home for account CRUD and the backup buttons) · `js/app.js` (tab nav via `#hash` routing, toast notifications, wires everything together — each view re-fetches fresh from IndexedDB on render, no separate app-level state store needed)
+File layout (vanilla JS, ES modules, one module per concern):
+`js/dom.js` (DOM-builder helper + `field()` label-association helper, shared by every view) · `js/money.js` (paise↔rupee helpers, INR formatting) · `js/calc.js` (safe arithmetic expression evaluator, no `eval()`) · `js/db.js` (IndexedDB layer per §5) · `js/tags.js` (tag-chip autocomplete input for the entry form, plus the shared multi-select AND tag-filter widget used by both Analysis and Transactions) · `js/entry.js` (add/edit transaction form + inline account creation) · `js/list.js` (transaction list/filters, edit/delete, reconciliation-mismatch indicator) · `js/analysis.js` (monthly summary, by-account, tag AND/NOT filter, statement-cycle filter, needs-reconciliation list) · `js/backup.js` (JSON export/import) · `js/settings.js` (account + tag management UI, wires up `backup.js`'s export/import buttons — added during the build; the original plan didn't list it separately, but `index.html`'s Settings tab needed a home for it) · `js/app.js` (hash-based tab routing, toast notifications, wires everything together — each view re-fetches fresh from IndexedDB on render, no separate app-level state store).
 
-Status: **v1 feature-complete and browser-verified.**
+Status: **v1 feature-complete, browser-verified, and in active real-world use** (the user has imported their full personal ledger history — see "Real data" below).
 
-- [x] Repo created at `~/code/expense-tracker`, git initialized, branch renamed `main`
-- [x] `index.html` — tab nav (Add / Transactions / Analysis / Settings), links `manifest.json`, `css/style.css`, `js/app.js`
-- [x] `manifest.json`, `sw.js`, `css/style.css`, `icons/icon.svg` — PWA shell. Verified: manifest fetches OK, service worker registers/activates and its `expense-tracker-v1` cache holds the full app shell (confirmed via headless browser against `http://localhost`)
+- [x] Repo created at `~/code/expense-tracker`, git initialized, branch `main`
+- [x] `index.html` — tab nav (Add / Transactions / Analysis / Settings)
+- [x] `manifest.json`, `sw.js`, `css/style.css`, `icons/icon.svg` — PWA shell, installable from `http://localhost`
 - [x] `js/money.js` + `js/calc.js`
-- [x] `js/db.js` — full CRUD per §5 schema, plus `exportAll()`/`importAll()` for backup. Import/export round-trip verified (wipe all stores, re-import, data restored intact including line item tag associations)
-- [x] `js/tags.js` — tag-chip input with autocomplete against existing tag names
-- [x] `js/entry.js` — entry form with splits, mandatory-tag validation, auto-calc-the-blank-value logic (§2.6), inline account creation (name + optional statement cycle day)
-- [x] `js/list.js` — transaction list, edit, delete, reconciliation-mismatch indicator
+- [x] `js/db.js` — full CRUD per §5, plus `exportAll()`/`importAll()` for backup
+- [x] `js/tags.js` — tag-chip autocomplete input (entry form) + shared multi-select AND tag-filter widget (Analysis, Transactions)
+- [x] `js/entry.js` — entry form with splits, mandatory-tag validation, auto-calc-the-blank-value logic (§2.6), inline account creation
+- [x] `js/list.js` — transaction list: date range, account, type (expense/income), and multi-tag-AND filters; account names and tag chips on every row are clickable links that apply/extend the filters in place; split transactions (>1 line item) auto-expand; edit/delete; reconciliation-mismatch badge
 - [x] `js/analysis.js` — income/expense summary, by-account breakdown, tag AND/NOT filter, calendar-month or statement-cycle date-range filter, needs-reconciliation list
-- [x] `js/backup.js` + `js/settings.js` — export button (download JSON), import button (file input, restore), account management (add/edit/delete, statement cycle day), tag management (rename/delete)
-- [x] End-to-end browser test (headless, against `python3 -m http.server` on `http://localhost`): created an account with a statement cycle day, added a split transaction (two line items, two tags, auto-reconciling stated total), verified the transaction list row and its per-item tags, verified the Analysis summary and by-account totals, verified the tag AND filter narrows results correctly, verified Settings renders account/tag rows, verified backup export/import round-trips through `db.js` directly, verified the manifest + service worker (app-shell cache) are both in place for PWA install from `http://localhost`
+- [x] `js/backup.js` + `js/settings.js` — export/import JSON, account management, tag management (rename/delete, tag names are links into a filtered Transactions view)
+- [x] End-to-end browser verification (headless, against `python3 -m http.server`) after every change in this log, including a full pass against the real imported dataset below (filters, links, edit/delete, reconciliation, backup round-trip, PWA installability).
+
+**Real data**: the user's full personal ledger (Nov 2025 – Aug 2026, from an hledger-style double-entry file plus a simpler flat-format continuation) has been converted and imported: 482 transactions, 687 line items, 95 tags, 6 accounts (Yes Bank, HDFC Bank, HDFC Card, SBI Card, Cash, Amazon Pay). Conversion logic lives in `tools/ledger_import.py` (committed — no financial data in it, just parsing/mapping code; run `python3 tools/ledger_import.py --help` for usage) — it auto-continues id sequences across multiple runs by reading back whatever `ledger-import.json` already exists, so pasting more ledger history later is a matter of running it again against the new file, not re-deriving the logic from scratch. The generated `ledger-import.json` and `ledger-import-skipped.md` (68 hledger + 2 flat-format entries flagged for manual review — mixed refund/purchase entries, compound multi-account entries, out-of-scope accounts like zerodha/loans, and untaggable "???" lines) are gitignored (real financial data, never committed) but remain on disk.
+
+**Bug fixes since initial build** (all found and verified via headless-browser testing against the live app, not just code review):
+- Edit button from the Transactions list opened a blank Add form — `app.js`'s hash-routing wrote `location.hash` on every `navigate()` call, and the resulting async `hashchange` re-ran the view with no params, clobbering `editId`. Fixed by guarding self-initiated hash changes.
+- Transaction rows showed a blank description when only a line item (not the transaction) had one — now falls back to the first line item's description, in both the Transactions list and Analysis's reconciliation list.
+- Every `.field` label was visually correct but not programmatically associated with its input (`for`/`id` never linked) — fixed via a `field()` helper in `dom.js` used everywhere a label+input pair is built.
+- The service worker's "network-first" strategy could still serve stale files from the browser's own HTTP cache (a layer separate from the SW's Cache Storage) because the dev server sends no `Cache-Control` header — fixed by forcing `cache: 'no-store'`/`'reload'` on the SW's own fetch calls.
+
+**Features added beyond the original v1 scope** (all user-requested, all shipped):
+- Date range filter (From/To) on Transactions, defaulting to start-of-current-month → today.
+- Account and Type (expense/income) filters, and a multi-select AND tag filter, on Transactions.
+- Account names and tags are clickable throughout (Transactions rows, Settings tag list) — clicking applies/extends the relevant filter instead of requiring manual dropdown use.
+- Split transactions auto-expand in the Transactions list so the line-item breakdown is visible without a click.
 
 Known rough edges / deferred polish (not blocking v1, noted for later):
 - Dedicated PNG icon sizes for iOS/Android home-screen polish are still deferred per §4 (the single SVG `"sizes": "any"` is enough for Chrome desktop install).

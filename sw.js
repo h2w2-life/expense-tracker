@@ -28,7 +28,7 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) => cache.addAll(APP_SHELL.map((url) => new Request(url, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
   );
 });
@@ -45,7 +45,11 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    fetch(event.request)
+    // `cache: 'no-store'` bypasses the browser's own HTTP cache, not just
+    // this service worker's cache — without it, `fetch()` here can still
+    // hand back a stale response for a dev server that sends no
+    // Cache-Control header, defeating the whole point of "network-first."
+    fetch(event.request, { cache: 'no-store' })
       .then((response) => {
         if (response.ok && response.type === 'basic') {
           const clone = response.clone();
