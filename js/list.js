@@ -17,30 +17,62 @@ function startOfMonthISO() {
 }
 
 export async function render(container, ctx) {
-  const { notify, navigate } = ctx;
+  const { notify, navigate, params = {} } = ctx;
   container.innerHTML = '';
   const root = el('div', { class: 'view list-view' });
   root.appendChild(el('h2', {}, 'Transactions'));
 
-  const fromInput = el('input', { type: 'date', value: startOfMonthISO() });
-  const toInput = el('input', { type: 'date', value: todayISO() });
-  root.appendChild(el('div', { class: 'card filter-bar' }, [field('From', fromInput), field('To', toInput)]));
-
-  const listEl = el('div', { class: 'txn-list' });
-  root.appendChild(listEl);
-  container.appendChild(root);
+  // Arriving via an account/tag link (from this tab or Settings) should show
+  // everything tied to it, not just this month — only default to the
+  // current-month window on a plain tab click.
+  const hasLinkFilter = params.accountId != null || params.tagId != null;
+  const fromInput = el('input', { type: 'date', value: hasLinkFilter ? '' : startOfMonthISO() });
+  const toInput = el('input', { type: 'date', value: hasLinkFilter ? '' : todayISO() });
 
   let [txns, accounts, tags] = await Promise.all([listTransactionsWithLineItems(), listAccounts(), listTags()]);
   const accountsById = new Map(accounts.map((a) => [a.id, a]));
   const tagsById = new Map(tags.map((t) => [t.id, t.name]));
 
+  const accountFilterSelect = el('select', {}, [
+    el('option', { value: '' }, 'All accounts'),
+    ...accounts.map((a) => el('option', { value: String(a.id) }, a.name)),
+  ]);
+  if (params.accountId != null) accountFilterSelect.value = String(params.accountId);
+
+  const tagFilterSelect = el('select', {}, [
+    el('option', { value: '' }, 'All tags'),
+    ...tags.map((t) => el('option', { value: String(t.id) }, t.name)),
+  ]);
+  if (params.tagId != null) tagFilterSelect.value = String(params.tagId);
+
+  root.appendChild(
+    el('div', { class: 'card filter-bar' }, [
+      field('From', fromInput),
+      field('To', toInput),
+      field('Account', accountFilterSelect),
+      field('Tag', tagFilterSelect),
+    ])
+  );
+
+  const listEl = el('div', { class: 'txn-list' });
+  root.appendChild(listEl);
+  container.appendChild(root);
+
   function renderList() {
     listEl.innerHTML = '';
     const from = fromInput.value;
     const to = toInput.value;
-    const filtered = txns.filter((t) => (!from || t.date >= from) && (!to || t.date <= to));
+    const accountFilter = accountFilterSelect.value ? Number(accountFilterSelect.value) : null;
+    const tagFilter = tagFilterSelect.value ? Number(tagFilterSelect.value) : null;
+    const filtered = txns.filter((t) => {
+      if (from && t.date < from) return false;
+      if (to && t.date > to) return false;
+      if (accountFilter && t.accountId !== accountFilter) return false;
+      if (tagFilter && !t.lineItems.some((li) => li.tagIds.includes(tagFilter))) return false;
+      return true;
+    });
     if (filtered.length === 0) {
-      const message = txns.length === 0 ? 'No transactions yet. Add one from the Add tab.' : 'No transactions in this date range.';
+      const message = txns.length === 0 ? 'No transactions yet. Add one from the Add tab.' : 'No transactions match the current filters.';
       listEl.appendChild(el('p', { class: 'empty-state' }, message));
       return;
     }
@@ -56,6 +88,8 @@ export async function render(container, ctx) {
 
   fromInput.addEventListener('change', renderList);
   toInput.addEventListener('change', renderList);
+  accountFilterSelect.addEventListener('change', renderList);
+  tagFilterSelect.addEventListener('change', renderList);
 
   renderList();
 }
@@ -71,9 +105,20 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh }
   // itself has none — common when a single-item purchase gets its
   // description typed on the item row instead of the transaction row.
   const displayDesc = txn.description || (txn.lineItems[0] && txn.lineItems[0].description) || '—';
+
+  const accountLink = el(
+    'button',
+    { type: 'button', class: 'txn-account link-chip' },
+    account ? account.name : '(deleted account)'
+  );
+  accountLink.addEventListener('click', (e) => {
+    e.stopPropagation();
+    navigate('list', { accountId: txn.accountId });
+  });
+
   const header = el('div', { class: 'txn-row-header' }, [
     el('span', { class: 'txn-date' }, txn.date),
-    el('span', { class: 'txn-account' }, account ? account.name : '(deleted account)'),
+    accountLink,
     el('span', { class: 'txn-desc' }, displayDesc),
     el('span', { class: `txn-amount ${txn.type === 'income' ? 'amount-income' : 'amount-expense'}` }, formatINR(txn.statedTotal ?? sum)),
   ]);
@@ -87,16 +132,21 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh }
 
   const itemsList = el('ul', { class: 'txn-line-items' });
   for (const li of txn.lineItems) {
-    const tagNames = li.tagIds.map((id) => tagsById.get(id)).filter(Boolean);
+    const tagChips = li.tagIds
+      .filter((id) => tagsById.has(id))
+      .map((id) => {
+        const chip = el('button', { type: 'button', class: 'tag-chip tag-chip-link' }, tagsById.get(id));
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          navigate('list', { tagId: id });
+        });
+        return chip;
+      });
     itemsList.appendChild(
       el('li', {}, [
         el('span', { class: 'li-amount' }, formatINR(li.amount)),
         el('span', { class: 'li-desc' }, li.description || '—'),
-        el(
-          'span',
-          { class: 'li-tags' },
-          tagNames.map((t) => el('span', { class: 'tag-chip tag-chip-readonly' }, t))
-        ),
+        el('span', { class: 'li-tags' }, tagChips),
       ])
     );
   }

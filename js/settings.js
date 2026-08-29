@@ -11,10 +11,10 @@ import {
   countLineItemsUsingTag,
 } from './db.js';
 import { exportToFile, importFromFile } from './backup.js';
-import { el } from './dom.js';
+import { el, field } from './dom.js';
 
 export async function render(container, ctx) {
-  const { notify } = ctx;
+  const { notify, navigate } = ctx;
   container.innerHTML = '';
   const root = el('div', { class: 'view settings-view' });
   root.appendChild(el('h2', {}, 'Settings'));
@@ -129,6 +129,8 @@ export async function render(container, ctx) {
       return;
     }
     for (const tag of tags) {
+      const tagLink = el('button', { type: 'button', class: 'link-chip tag-name-link' }, tag.name);
+      tagLink.addEventListener('click', () => navigate('list', { tagId: tag.id }));
       const nameInput = el('input', { type: 'text', value: tag.name });
       const saveBtn = el('button', { type: 'button', class: 'btn btn-secondary' }, 'Rename');
       saveBtn.addEventListener('click', async () => {
@@ -153,7 +155,7 @@ export async function render(container, ctx) {
           notify(err.message, 'error');
         }
       });
-      tagsList.appendChild(el('div', { class: 'settings-row' }, [nameInput, saveBtn, deleteBtn]));
+      tagsList.appendChild(el('div', { class: 'settings-row' }, [tagLink, nameInput, saveBtn, deleteBtn]));
     }
   }
   await refreshTags();
