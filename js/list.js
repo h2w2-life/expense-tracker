@@ -137,6 +137,26 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, 
     el('span', { class: 'txn-desc' }, displayDesc),
     el('span', { class: `txn-amount ${txn.type === 'income' ? 'amount-income' : 'amount-expense'}` }, formatINR(txn.statedTotal ?? sum)),
   ]);
+
+  if (txn.lineItems.length > 1) {
+    header.appendChild(el('span', { class: 'badge badge-split' }, `Split (${txn.lineItems.length})`));
+  } else if (txn.lineItems[0]) {
+    const li = txn.lineItems[0];
+    const tagsContainer = el('span', { class: 'txn-row-tags' });
+    const tagChips = li.tagIds
+      .filter((id) => tagsById.has(id))
+      .map((id) => {
+        const chip = el('button', { type: 'button', class: 'tag-chip tag-chip-link' }, tagsById.get(id));
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          addTagFilter(id);
+        });
+        return chip;
+      });
+    tagsContainer.appendChild(...tagChips);
+    header.appendChild(tagsContainer);
+  }
+
   if (mismatch) {
     header.appendChild(
       el('span', { class: 'badge badge-warning' }, `Needs reconciliation (Δ ${formatINR(Math.abs((txn.statedTotal ?? 0) - sum))})`)

@@ -456,6 +456,26 @@ button.tag-chip {
   background: #fff3d6;
   color: #8a5b00;
 }
+.badge-split {
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  margin-left: var(--space-2);
+}
+.txn-row-tags {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+  vertical-align: middle;
+}
+
+.txn-row-tags .tag-chip {
+  font-size: 0.75rem;
+  padding: 0 6px;
+}
 
 .txn-details {
   display: none;
