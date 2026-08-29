@@ -89,6 +89,7 @@ Status: **v1 feature-complete, browser-verified, and in active real-world use** 
 - Split transactions auto-expand in the Transactions list so the line-item breakdown is visible without a click.
 
 - Transaction list header now shows tags directly for single-item purchases (clickable to filter); split transactions show a `Split (N)` badge instead, emphasizing the need to expand for details.
+- Account names in the Analysis summary section are now clickable links that navigate to the Transactions tab, filtered by that account and the current analysis time period.
 Known rough edges / deferred polish (not blocking v1, noted for later):
 - Dedicated PNG icon sizes for iOS/Android home-screen polish are still deferred per §4 (the single SVG `"sizes": "any"` is enough for Chrome desktop install).
 - No automated test suite yet (browser-verified manually per above) — add one if a regression surfaces or before the Cordova wrap in §4.

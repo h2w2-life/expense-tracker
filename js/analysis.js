@@ -125,7 +125,7 @@ export async function render(container, ctx) {
       if (notTagIds.length && notTagIds.some((id) => li.tagIds.includes(id))) return false;
       return true;
     });
-    renderSummary(summarySection, filtered, accountsById);
+    renderSummary(summarySection, filtered, accountsById, navigate, range);
   }
 
   periodModeSelect.addEventListener('change', () => {
@@ -142,7 +142,7 @@ export async function render(container, ctx) {
   renderReconciliation(reconSection, txns, accountsById, navigate);
 }
 
-function renderSummary(section, lineItems, accountsById) {
+function renderSummary(section, lineItems, accountsById, navigate, range) {
   section.innerHTML = '';
   section.appendChild(el('h3', {}, 'Summary'));
   const income = lineItems.filter((li) => li.type === 'income').reduce((s, li) => s + li.amount, 0);
@@ -173,7 +173,17 @@ function renderSummary(section, lineItems, accountsById) {
     const acc = accountsById.get(accId);
     tbody.appendChild(
       el('tr', {}, [
-        el('td', {}, acc ? acc.name : '(deleted account)'),
+        el('td', {}, 
+          acc ? el('button', { 
+            type: 'button', 
+            class: 'txn-account link-chip', 
+            onclick: () => navigate('list', { 
+              accountId: accId, 
+              from: range?.start, 
+              to: range?.end 
+            }) 
+          }, acc.name) : '(deleted account)'
+        ),
         el('td', { class: 'amount-income' }, formatINR(bucket.income)),
         el('td', { class: 'amount-expense' }, formatINR(bucket.expense)),
       ])

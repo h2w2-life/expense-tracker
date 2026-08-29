@@ -27,8 +27,8 @@ export async function render(container, ctx) {
   // everything tied to it, not just this month — only default to the
   // current-month window on a plain tab click.
   const hasLinkFilter = params.accountId != null || params.tagId != null;
-  const fromInput = el('input', { type: 'date', value: hasLinkFilter ? '' : startOfMonthISO() });
-  const toInput = el('input', { type: 'date', value: hasLinkFilter ? '' : todayISO() });
+  const fromInput = el('input', { type: 'date', value: params.from || (hasLinkFilter ? '' : startOfMonthISO()) });
+  const toInput = el('input', { type: 'date', value: params.to || (hasLinkFilter ? '' : todayISO()) });
 
   let [txns, accounts, tags] = await Promise.all([listTransactionsWithLineItems(), listAccounts(), listTags()]);
   const accountsById = new Map(accounts.map((a) => [a.id, a]));
