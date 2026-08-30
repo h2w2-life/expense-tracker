@@ -1,3 +1,7 @@
 # Generated from personal ledger data — real financial data, never commit.
 ledger-import.json
 ledger-import-skipped.md
+money.ldg
+
+# Python bytecode cache
+__pycache__/

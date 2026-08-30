@@ -57,8 +57,16 @@ def to_paise(amount):
     return int(round(amount * 100))
 
 
+TAG_RENAMES = {
+    "???": "unknown",
+    "it": "itr",
+}
+
+
 def normalize_tag(name):
-    return re.sub(r"\s+", " ", name.strip().lower())
+    name = re.sub(r"\s+", " ", name.strip().lower())
+    name = name.replace("d-mart", "dmart")
+    return TAG_RENAMES.get(name, name)
 
 
 # Ledger "; comment :tag1:tag2:" metadata: a whitespace-delimited token that
@@ -85,6 +93,41 @@ def extract_inline_tags(comment):
         else:
             kept.append(tok)
     return tags, " ".join(kept).strip()
+
+
+# A tag in this set gets replaced by the listed tags and its own name is
+# folded into the description instead -- these were never meaningful tags on
+# their own (a person's nickname for a one-off event), just mistagged.
+TAG_REDIRECTS = {
+    "riyaz-bhaiyya": ["tfi"],
+    "bebu-haar": ["bebu", "gift"],
+}
+
+# A bare keyword match against the description adds these tags, regardless
+# of source format (hledger category path or flat-format free text).
+DESCRIPTION_KEYWORD_TAGS = [
+    (re.compile(r"\bnetflix\b", re.I), ["subscription", "netflix"]),
+]
+
+
+def apply_tag_policies(description, tags):
+    """Applies TAG_REDIRECTS and DESCRIPTION_KEYWORD_TAGS to one line item's
+    (description, tags) before it's normalized/stored. Returns (description, tags)."""
+    tags = list(tags)
+    for special, extra_tags in TAG_REDIRECTS.items():
+        if any(normalize_tag(t) == special for t in tags):
+            tags = [t for t in tags if normalize_tag(t) != special]
+            for extra in extra_tags:
+                if not any(normalize_tag(t) == extra for t in tags):
+                    tags.append(extra)
+            if special not in description.lower():
+                description = f"{description} {special}".strip()
+    for pattern, extra_tags in DESCRIPTION_KEYWORD_TAGS:
+        if pattern.search(description):
+            for extra in extra_tags:
+                if not any(normalize_tag(t) == extra for t in tags):
+                    tags.append(extra)
+    return description, tags
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +178,8 @@ class Accumulator:
         account_id = self.get_account_id(account_name)
         total_paise = 0
         for li in line_items:
+            li_description, li_tags = apply_tag_policies(li["description"], li["tags"])
+            li = {**li, "description": li_description, "tags": li_tags}
             tag_ids, seen = [], set()
             for tag in li["tags"]:
                 tid = self.get_tag_id(tag)
@@ -260,6 +305,13 @@ def _parse_hledger_transactions(lines):
                 )
             i += 1
         transactions.append(txn)
+    for txn in transactions:
+        elided = [p for p in txn["postings"] if p["amount"] is None]
+        if len(elided) == 1:
+            known_sum = sum(p["amount"] for p in txn["postings"] if p["amount"] is not None)
+            elided[0]["amount"] = -known_sum
+        elif len(elided) > 1:
+            raise ValueError(f"transaction at line {txn['line']} has {len(elided)} elided amounts (only 1 allowed)")
     return transactions
 
 
@@ -281,39 +333,95 @@ def _decompose_multi_money_leg(t):
     -- whichever suffix matches closes that sub-purchase. This recovers
     ~85% of such compound entries without ever guessing a pairing that
     doesn't actually balance.
-    Returns (groups, 'ok') | (None, 'pure_transfer') | (None, 'unresolved') | (None, 'out_of_scope')
+    Out-of-scope postings (investments, person-to-person loans, equity) count
+    toward the balancing sum -- a suffix can only close a purchase if it
+    balances the money leg exactly, and a loan/transfer often shares a suffix
+    with real purchases in these bundled "daily misc" entries -- but never
+    become line items themselves: once a suffix matches, only its category
+    (Expenses/Income) members are kept for the emitted group.
+    Returns (groups, 'ok') | (None, 'pure_transfer') | (None, 'unresolved')
     where groups = [(money_posting_index, [category_posting_indices]), ...]
+    (groups with zero category postings, i.e. pure transfers/loans, are
+    dropped silently rather than emitted).
     """
     postings = t["postings"]
-    for p in postings:
-        if _hledger_classify(p["account"]) == "out_of_scope":
-            return None, "out_of_scope"
     if not any(_hledger_classify(p["account"]) == "category" for p in postings):
         return None, "pure_transfer"
 
     n = len(postings)
+    kinds = [_hledger_classify(p["account"]) for p in postings]
     used = [False] * n
     groups = []
     pending = []
 
+    # Contiguous runs of money-account postings (e.g. an ATM withdrawal:
+    # cash +10000 / checking -10000, back to back, no category leg between
+    # them) are pure account-to-account transfers, not purchases -- if such
+    # a run sums to zero on its own, consume it entirely up front so it
+    # doesn't have to (and can't) match against any pending category suffix.
+    self_transfer = set()
+    i = 0
+    while i < n:
+        if kinds[i] == "money":
+            j = i
+            while j < n and kinds[j] == "money":
+                j += 1
+            run = list(range(i, j))
+            if len(run) >= 2 and abs(sum(postings[k]["amount"] for k in run)) <= 0.01:
+                self_transfer.update(run)
+            i = j
+        else:
+            i += 1
+    for idx in self_transfer:
+        used[idx] = True
+
     for idx, p in enumerate(postings):
-        kind = _hledger_classify(p["account"])
-        if kind == "category":
+        if idx in self_transfer:
+            continue
+        kind = kinds[idx]
+        if kind in ("category", "out_of_scope"):
             pending.append(idx)
         elif kind == "money":
             matched = None
-            for start in range(len(pending) - 1, -1, -1):
+            for start in range(0, len(pending)):
                 suffix = pending[start:]
                 s = sum(postings[j]["amount"] for j in suffix)
                 if abs(abs(s) - abs(p["amount"])) <= 0.01:
                     matched = suffix
                     break
             if matched is not None:
-                groups.append((idx, list(matched)))
+                cat_only = [j for j in matched if _hledger_classify(postings[j]["account"]) == "category"]
+                if cat_only:
+                    groups.append((idx, cat_only))
                 used[idx] = True
                 for j in matched:
                     used[j] = True
                 pending = pending[: len(pending) - len(matched)]
+
+    # Leftover category legs that never matched any money leg by exact suffix
+    # sum (e.g. a "1st of month" entry that pays down credit cards AND funds
+    # a batch of category spending out of the same elided/catch-all money
+    # leg) get attributed wholesale to the last not-yet-used money posting --
+    # by hledger's elision rule that leg's amount is already defined as
+    # "whatever balances the rest", so this is exact, not a guess. Any other
+    # still-unused money postings (e.g. the card-payment legs themselves) are
+    # then pure transfers between tracked accounts, not purchases -- discard.
+    if pending:
+        unmatched_money = [idx for idx in range(n) if kinds[idx] == "money" and not used[idx]]
+        if unmatched_money:
+            catch_all = unmatched_money[-1]
+            cat_only = [j for j in pending if _hledger_classify(postings[j]["account"]) == "category"]
+            if cat_only:
+                groups.append((catch_all, cat_only))
+            for idx in unmatched_money:
+                used[idx] = True
+            for j in pending:
+                used[j] = True
+            pending = []
+    else:
+        for idx in range(n):
+            if kinds[idx] == "money" and not used[idx]:
+                used[idx] = True
 
     if pending or not all(used):
         return None, "unresolved"
@@ -326,25 +434,14 @@ def import_hledger(text):
     line_items is [{'amount','description','tags'}] (amount in rupees,
     tags as raw strings), and skip_entries is [(raw_source, reason)]."""
     transactions = _parse_hledger_transactions(text.splitlines())
+    ready = []
     skip = []
     single_leg_ready = []
     multi_leg = []
 
+
     for t in transactions:
         postings = t["postings"]
-        elided = [p for p in postings if p["amount"] is None]
-        known_sum = sum(p["amount"] for p in postings if p["amount"] is not None)
-        if len(elided) > 1:
-            skip.append((t, "multiple elided (unamounted) postings"))
-            continue
-        if len(elided) == 1:
-            elided[0]["amount"] = -known_sum
-
-        kinds = {_hledger_classify(p["account"]) for p in postings}
-        if "out_of_scope" in kinds:
-            oos = sorted({p["account"] for p in postings if _hledger_classify(p["account"]) == "out_of_scope"})
-            skip.append((t, f"touches out-of-scope account(s): {', '.join(oos)}"))
-            continue
 
         money_legs = [p for p in postings if _hledger_classify(p["account"]) == "money"]
         category_legs = [p for p in postings if _hledger_classify(p["account"]) == "category"]
@@ -360,18 +457,27 @@ def import_hledger(text):
             continue
 
         money_leg = money_legs[0]
-        cat_kinds = {("expense" if p["account"].startswith("Expenses") else "income") for p in category_legs}
-        txn_type = "expense" if money_leg["amount"] < 0 else "income"
-        if (txn_type == "expense" and cat_kinds != {"expense"}) or (txn_type == "income" and cat_kinds != {"income"}):
-            skip.append((t, f"{txn_type}-type txn has mixed category legs: {cat_kinds}"))
+        expense_legs = [p for p in category_legs if p["account"].startswith("Expenses")]
+        income_legs = [p for p in category_legs if p["account"].startswith("Income")]
+
+        if expense_legs and income_legs:
+            # Split mixed transaction into two: one expense, one income.
+            # Type is taken from the leg's own account prefix, not re-derived
+            # from a computed sum's sign -- a stray positive-signed Income
+            # posting (a real inconsistency seen in this ledger) would
+            # otherwise flip the whole synthetic transaction to "expense".
+            ready.append(_hledger_to_ready(t, money_leg, expense_legs, txn_type="expense"))
+            ready.append(_hledger_to_ready(t, money_leg, income_legs, txn_type="income"))
             continue
 
+        # Single-type txn
         single_leg_ready.append((t, money_leg, category_legs))
-
-    ready = []
     for t, money_leg, category_legs in single_leg_ready:
-        ready.append(_hledger_to_ready(t, money_leg, category_legs))
-
+        # category_legs is homogeneous here (mixed case already split above).
+        # Type is taken from the leg's own account prefix, never from sign,
+        # for the same reason as the split above.
+        txn_type = "income" if category_legs[0]["account"].startswith("Income") else "expense"
+        ready.append(_hledger_to_ready(t, money_leg, category_legs, txn_type=txn_type))
     for t in multi_leg:
         groups, status = _decompose_multi_money_leg(t)
         if status == "pure_transfer":
@@ -382,12 +488,14 @@ def import_hledger(text):
         for money_idx, cat_idxs in groups:
             money_leg = t["postings"][money_idx]
             cat_legs = [t["postings"][j] for j in cat_idxs]
-            cat_kinds = {("expense" if p["account"].startswith("Expenses") else "income") for p in cat_legs}
-            txn_type = "expense" if money_leg["amount"] < 0 else "income"
-            if (txn_type == "expense" and cat_kinds != {"expense"}) or (txn_type == "income" and cat_kinds != {"income"}):
-                skip.append((t, f"(sub-group at line {money_leg['line']}) mixed category legs: {cat_kinds}"))
+            expense_legs = [p for p in cat_legs if p["account"].startswith("Expenses")]
+            income_legs = [p for p in cat_legs if p["account"].startswith("Income")]
+            if expense_legs and income_legs:
+                ready.append(_hledger_to_ready(t, money_leg, expense_legs, line=money_leg["line"], txn_type="expense"))
+                ready.append(_hledger_to_ready(t, money_leg, income_legs, line=money_leg["line"], txn_type="income"))
                 continue
-            ready.append(_hledger_to_ready(t, money_leg, cat_legs, line=money_leg["line"]))
+            txn_type = "income" if income_legs else "expense"
+            ready.append(_hledger_to_ready(t, money_leg, cat_legs, line=money_leg["line"], txn_type=txn_type))
 
     skip_entries = [
         (f"{t['date']} — {t['description'] or '(no description)'} (line {t['line']})\n{_hledger_render_postings(t['postings'])}", reason)
@@ -396,7 +504,7 @@ def import_hledger(text):
     return ready, skip_entries
 
 
-def _hledger_to_ready(t, money_leg, category_legs, line=None):
+def _hledger_to_ready(t, money_leg, category_legs, line=None, txn_type=None):
     line_items = []
     for leg in category_legs:
         path = leg["account"].split(":")[1:]  # drop leading Expenses/Income
@@ -404,11 +512,11 @@ def _hledger_to_ready(t, money_leg, category_legs, line=None):
         line_items.append({"amount": abs(leg["amount"]), "description": desc, "tags": list(path) + inline_tags})
     return {
         "date": t["date"],
-        "type": "expense" if money_leg["amount"] < 0 else "income",
+        "type": txn_type or ("expense" if money_leg["amount"] < 0 else "income"),
         "account_name": HLEDGER_MONEY_ACCOUNTS[money_leg["account"]],
         "description": t["description"],
         "line_items": line_items,
-        "line": line or money_leg["line"],
+        "line": line or money_leg.get("line", t["line"]),
     }
 
 
@@ -422,7 +530,7 @@ FLAT_ACCOUNT_KEYWORDS = [
     (re.compile(r"\bcash\b", re.I), "Cash"),
     (re.compile(r"\bamazonpay\b", re.I), "Amazon Pay"),
 ]
-FLAT_DEFAULT_ACCOUNT = "HDFC Bank"
+FLAT_DEFAULT_ACCOUNT = "HDFC UPI"
 
 # Person names to tag whenever mentioned in a description.
 FLAT_PERSON_WORDS = [
@@ -606,6 +714,7 @@ def main():
         heading = f"{args.file.name} import notes (flat format, year={args.year})"
 
     merge_ready(acc, ready)
+    acc.get_account_id(FLAT_DEFAULT_ACCOUNT)  # always present, even if unused this run -- it's the default account for future manual/flat entries with no account specified
     data = acc.write()
     if skip:
         append_skip_report(heading, skip)
