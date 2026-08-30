@@ -465,14 +465,15 @@ button.tag-chip {
   font-weight: 600;
   margin-left: var(--space-2);
 }
-.txn-row-tags {
-  display: inline-flex;
+.txn-row-all-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: var(--space-1);
-  margin-left: var(--space-2);
-  vertical-align: middle;
+  padding: 0 var(--space-3) var(--space-3);
 }
 
-.txn-row-tags .tag-chip {
+.txn-row-all-tags .tag-chip {
   font-size: 0.75rem;
   padding: 0 6px;
 }
@@ -536,6 +537,11 @@ button.tag-chip {
 /* ---------- Analysis ---------- */
 
 .filter-bar {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-row {
   display: grid;
   grid-template-columns: 1fr;
   gap: 0 var(--space-4);
@@ -578,6 +584,45 @@ button.tag-chip {
   text-align: left;
   padding: var(--space-2);
   border-bottom: 1px solid var(--color-border);
+}
+
+.month-field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.month-field-row input[type='month'] {
+  flex: 1;
+}
+
+.month-nav-btn {
+  padding: var(--space-2);
+  flex-shrink: 0;
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.collapsible-header h3 {
+  margin: 0;
+}
+
+.collapsible-toggle {
+  color: var(--color-muted);
+  font-size: 0.8rem;
+}
+
+.recon-title-ok {
+  color: var(--color-income);
+}
+
+.recon-title-bad {
+  color: var(--color-danger);
 }
 
 /* ---------- Settings ---------- */
@@ -637,7 +682,11 @@ button.tag-chip {
     align-items: end;
   }
 
-  .filter-bar {
+  .filter-row-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .filter-row-2 {
     grid-template-columns: repeat(2, 1fr);
   }
 
