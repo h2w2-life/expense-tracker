@@ -339,24 +339,27 @@ function renderSummary(section, filteredTxns, accountsById, { expanded, onToggle
 
 function renderReconciliation(section, txns, accountsById, navigate, { expanded, onToggle, getFilters }) {
   section.innerHTML = '';
-  section.classList.toggle('expanded', expanded);
 
   const mismatched = txns.filter((t) => {
     const sum = t.lineItems.reduce((s, li) => s + li.amount, 0);
     return t.statedTotal != null && sum !== t.statedTotal;
   });
 
-  const title = el('h3', { class: mismatched.length === 0 ? 'recon-title-ok' : 'recon-title-bad' }, 'Needs reconciliation');
-  const header = el('div', { class: 'collapsible-header' }, [title, el('span', { class: 'collapsible-toggle' }, expanded ? '▲' : '▼')]);
+  // Nothing to reconcile — the section is noise, not a status to report.
+  section.hidden = mismatched.length === 0;
+  if (mismatched.length === 0) return;
+
+  section.classList.toggle('expanded', expanded);
+
+  const header = el('div', { class: 'collapsible-header' }, [
+    el('h3', {}, 'Needs reconciliation'),
+    el('span', { class: 'collapsible-toggle' }, expanded ? '▲' : '▼'),
+  ]);
   header.addEventListener('click', onToggle);
   section.appendChild(header);
 
   if (!expanded) return;
 
-  if (mismatched.length === 0) {
-    section.appendChild(el('p', { class: 'empty-state' }, 'Everything reconciles. Nothing to review.'));
-    return;
-  }
   const list = el('div', { class: 'txn-list' });
   for (const t of mismatched) {
     const sum = t.lineItems.reduce((s, li) => s + li.amount, 0);

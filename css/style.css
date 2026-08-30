@@ -617,14 +617,6 @@ button.tag-chip {
   font-size: 0.8rem;
 }
 
-.recon-title-ok {
-  color: var(--color-income);
-}
-
-.recon-title-bad {
-  color: var(--color-danger);
-}
-
 /* ---------- Settings ---------- */
 
 .settings-list {
