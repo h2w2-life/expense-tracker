@@ -561,7 +561,7 @@ FLAT_KEYWORD_RULES = [
     (r"\bhospital\b", ["health", "medical", "hospital"]),
     (r"\bmassager\b|\bpull up bar\b|\bexercise\b", ["health", "fitness"]),
     (r"\bschool fees\b", ["004", "school-fees"]),
-    (r"\bkanya yojana\b", ["004", "kanya-yojana"]),
+    (r"\bkanya yojana\b", ["004", "kanya-yojana", "bebu"]),  # always bebu's scheme, even if her name isn't written out
     (r"\bnetflix\b", ["subscriptions", "netflix"]),
     (r"\byoutube\b", ["subscriptions", "youtube"]),
     (r"\bclaude\b", ["subscriptions", "claude"]),
@@ -598,12 +598,21 @@ _FLAT_DATE_RE = re.compile(r"^(\d{1,2})/(\d{1,2})$")
 _FLAT_ENTRY_RE = re.compile(r"^(\+)?(\d+(?:\.\d+)?k?)\s+(.*)$")
 
 
+# A description that's *just* one of these words (no other text) is the
+# recurring monthly family-allowance transfer -- filed under "Expenses:004:*"
+# in the hledger ledger, so it gets the "004" tag here too for consistency.
+FLAT_BARE_004_NAMES = {"teju", "pappa", "aai"}
+
+
 def _flat_derive_tags(desc):
     tags = []
 
     def add(tag):
         if tag not in tags:
             tags.append(tag)
+
+    if desc.strip().lower() in FLAT_BARE_004_NAMES:
+        add("004")
 
     lower = desc.lower()
     for word in FLAT_PERSON_WORDS:
