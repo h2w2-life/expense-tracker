@@ -49,6 +49,9 @@ function bindAmountField(input) {
 export async function render(container, ctx) {
   const { notify, navigate, params } = ctx;
   const editingId = params && params.editId;
+  // Editing from the Transactions tab carries its filter snapshot along so
+  // save/cancel can return to the same filtered view instead of resetting it.
+  const returnToList = () => navigate('list', params && params.filters ? { filters: params.filters } : undefined);
 
   container.innerHTML = '';
   const root = el('div', { class: 'view entry-view' });
@@ -148,7 +151,7 @@ export async function render(container, ctx) {
 
   const submitBtn = el('button', { type: 'submit', class: 'btn btn-primary' }, editingId ? 'Save changes' : 'Add transaction');
   const cancelBtn = el('button', { type: 'button', class: 'btn btn-link' }, 'Cancel');
-  cancelBtn.addEventListener('click', () => navigate('list'));
+  cancelBtn.addEventListener('click', returnToList);
 
   form.append(
     el('div', { class: 'form-grid' }, [field('Date', dateInput), field('Type', typeSelect)]),
@@ -165,7 +168,7 @@ export async function render(container, ctx) {
     const txn = await getTransaction(editingId);
     if (!txn) {
       notify('Transaction not found', 'error');
-      navigate('list');
+      returnToList();
       return;
     }
     const lineItems = await listLineItemsForTransaction(editingId);
@@ -267,7 +270,7 @@ export async function render(container, ctx) {
         lineItemsPayload
       );
       notify(editingId ? 'Transaction updated' : 'Transaction added', 'success');
-      navigate('list');
+      returnToList();
     } catch (err) {
       notify(err.message, 'error');
     }

@@ -38,10 +38,13 @@ export async function render(container, ctx) {
   const root = el('div', { class: 'view list-view' });
   root.appendChild(el('h2', {}, 'Transactions'));
 
-  // Arriving via an account/tag link (from this tab or Settings) should show
-  // everything tied to it, not just this month — only default to the
-  // current-month window on a plain tab click.
-  const hasLinkFilter = params.accountId != null || params.tagId != null;
+  // A round-trip through the Add/Edit form (see the `filters` param below)
+  // carries a full snapshot of the filter state to restore. Absent that, an
+  // account/tag link (from this tab or Settings) should show everything tied
+  // to it, not just this month — only default to the current-month window on
+  // a plain tab click.
+  const savedFilters = params.filters || null;
+  const hasLinkFilter = !savedFilters && (params.accountId != null || params.tagId != null);
 
   let [txns, accounts, tags] = await Promise.all([listTransactionsWithLineItems(), listAccounts(), listTags()]);
   const accountsById = new Map(accounts.map((a) => [a.id, a]));
@@ -53,9 +56,12 @@ export async function render(container, ctx) {
     el('option', { value: 'cycle' }, 'Statement cycle'),
     el('option', { value: 'all' }, 'All time'),
   ]);
-  periodModeSelect.value = hasLinkFilter ? 'all' : 'month';
+  periodModeSelect.value = savedFilters ? savedFilters.periodMode : hasLinkFilter ? 'all' : 'month';
 
-  const monthInput = el('input', { type: 'month', value: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}` });
+  const monthInput = el('input', {
+    type: 'month',
+    value: (savedFilters && savedFilters.month) || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
+  });
   const prevMonthBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-icon month-nav-btn' }, '◀');
   const nextMonthBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-icon month-nav-btn' }, '▶');
   function shiftMonth(delta) {
@@ -70,18 +76,21 @@ export async function render(container, ctx) {
 
   const cycleAccounts = accounts.filter((a) => a.statementCycleStartDay);
   const cycleAccountSelect = el('select', {}, cycleAccounts.map((a) => el('option', { value: String(a.id) }, a.name)));
+  if (savedFilters && savedFilters.cycleAccountId) cycleAccountSelect.value = savedFilters.cycleAccountId;
 
   const accountFilterSelect = el('select', {}, [
     el('option', { value: '' }, 'All accounts'),
     ...accounts.map((a) => el('option', { value: String(a.id) }, a.name)),
   ]);
-  if (params.accountId != null) accountFilterSelect.value = String(params.accountId);
+  if (savedFilters) accountFilterSelect.value = savedFilters.accountId || '';
+  else if (params.accountId != null) accountFilterSelect.value = String(params.accountId);
 
   const typeFilterSelect = el('select', {}, [
     el('option', { value: '' }, 'Expense + income'),
     el('option', { value: 'expense' }, 'Expense only'),
     el('option', { value: 'income' }, 'Income only'),
   ]);
+  if (savedFilters) typeFilterSelect.value = savedFilters.type || '';
 
   const andTagsMount = el('div', { class: 'tag-filter-mount' });
   const notTagsMount = el('div', { class: 'tag-filter-mount' });
@@ -107,9 +116,11 @@ export async function render(container, ctx) {
   }
 
   const andWidget = mountTagFilterInput(andTagsMount, tags, {
-    initialIds: params.tagId != null ? [params.tagId] : [],
+    initialIds: savedFilters ? savedFilters.andTagIds : params.tagId != null ? [params.tagId] : [],
   });
-  const notWidget = mountTagFilterInput(notTagsMount, tags);
+  const notWidget = mountTagFilterInput(notTagsMount, tags, {
+    initialIds: savedFilters ? savedFilters.notTagIds : [],
+  });
 
   function updatePeriodFieldVisibility() {
     const mode = periodModeSelect.value;
@@ -142,6 +153,22 @@ export async function render(container, ctx) {
   let summaryExpanded = false;
   let reconExpanded = false;
 
+  // Snapshot of every filter control, threaded through the Add/Edit form via
+  // navigate('entry', { editId, filters }) and back via navigate('list',
+  // { filters }) on save/cancel — otherwise editing a transaction drops the
+  // filters back to the tab's plain defaults.
+  function currentFiltersSnapshot() {
+    return {
+      periodMode: periodModeSelect.value,
+      month: monthInput.value,
+      cycleAccountId: cycleAccountSelect.value,
+      accountId: accountFilterSelect.value,
+      type: typeFilterSelect.value,
+      andTagIds: andWidget.getSelectedIds(),
+      notTagIds: notWidget.getSelectedIds(),
+    };
+  }
+
   function renderRecon() {
     renderReconciliation(reconSection, txns, accountsById, navigate, {
       expanded: reconExpanded,
@@ -149,6 +176,7 @@ export async function render(container, ctx) {
         reconExpanded = !reconExpanded;
         renderRecon();
       },
+      getFilters: currentFiltersSnapshot,
     });
   }
 
@@ -191,7 +219,15 @@ export async function render(container, ctx) {
       return;
     }
     for (const txn of filtered) {
-      listEl.appendChild(renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, addTagFilter: andWidget.addSelectedId }));
+      listEl.appendChild(
+        renderTxnRow(txn, accountsById, tagsById, {
+          notify,
+          navigate,
+          refresh,
+          addTagFilter: andWidget.addSelectedId,
+          getFilters: currentFiltersSnapshot,
+        })
+      );
     }
   }
 
@@ -301,7 +337,7 @@ function renderSummary(section, filteredTxns, accountsById, { expanded, onToggle
   );
 }
 
-function renderReconciliation(section, txns, accountsById, navigate, { expanded, onToggle }) {
+function renderReconciliation(section, txns, accountsById, navigate, { expanded, onToggle, getFilters }) {
   section.innerHTML = '';
   section.classList.toggle('expanded', expanded);
 
@@ -326,7 +362,7 @@ function renderReconciliation(section, txns, accountsById, navigate, { expanded,
     const sum = t.lineItems.reduce((s, li) => s + li.amount, 0);
     const acc = accountsById.get(t.accountId);
     const editBtn = el('button', { type: 'button', class: 'btn btn-secondary' }, 'Edit');
-    editBtn.addEventListener('click', () => navigate('entry', { editId: t.id }));
+    editBtn.addEventListener('click', () => navigate('entry', { editId: t.id, filters: getFilters() }));
     list.appendChild(
       el('div', { class: 'txn-row txn-mismatch' }, [
         el('div', { class: 'txn-row-header' }, [
@@ -342,7 +378,7 @@ function renderReconciliation(section, txns, accountsById, navigate, { expanded,
   section.appendChild(list);
 }
 
-function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, addTagFilter }) {
+function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, addTagFilter, getFilters }) {
   const sum = txn.lineItems.reduce((s, li) => s + li.amount, 0);
   const mismatch = txn.statedTotal != null && sum !== txn.statedTotal;
   const account = accountsById.get(txn.accountId);
@@ -429,7 +465,7 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, 
   const editBtn = el('button', { type: 'button', class: 'btn btn-secondary' }, 'Edit');
   editBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    navigate('entry', { editId: txn.id });
+    navigate('entry', { editId: txn.id, filters: getFilters() });
   });
   const deleteBtn = el('button', { type: 'button', class: 'btn btn-danger' }, 'Delete');
   deleteBtn.addEventListener('click', async (e) => {
