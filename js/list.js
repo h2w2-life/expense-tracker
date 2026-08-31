@@ -196,7 +196,19 @@ export async function render(container, ctx) {
       return true;
     });
 
-    renderSummary(summarySection, filtered, accountsById, {
+    // A split transaction can pass the tag filter above via just one of its
+    // line items — the summary should only total the items that actually
+    // carry the filtered tags, not the whole transaction.
+    const summaryLineItems = [];
+    for (const t of filtered) {
+      for (const li of t.lineItems) {
+        if (andTagIds.length && !andTagIds.every((id) => li.tagIds.includes(id))) continue;
+        if (notTagIds.length && notTagIds.some((id) => li.tagIds.includes(id))) continue;
+        summaryLineItems.push({ ...li, type: t.type, accountId: t.accountId });
+      }
+    }
+
+    renderSummary(summarySection, summaryLineItems, accountsById, {
       expanded: summaryExpanded,
       onToggle: () => {
         summaryExpanded = !summaryExpanded;
@@ -255,14 +267,10 @@ export async function render(container, ctx) {
   renderList();
 }
 
-function renderSummary(section, filteredTxns, accountsById, { expanded, onToggle, onTypeClick, onAccountClick }) {
+function renderSummary(section, lineItems, accountsById, { expanded, onToggle, onTypeClick, onAccountClick }) {
   section.innerHTML = '';
   section.classList.toggle('expanded', expanded);
 
-  const lineItems = [];
-  for (const t of filteredTxns) {
-    for (const li of t.lineItems) lineItems.push({ ...li, type: t.type, accountId: t.accountId });
-  }
   const income = lineItems.filter((li) => li.type === 'income').reduce((s, li) => s + li.amount, 0);
   const expense = lineItems.filter((li) => li.type === 'expense').reduce((s, li) => s + li.amount, 0);
 
