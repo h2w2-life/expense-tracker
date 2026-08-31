@@ -382,7 +382,8 @@ button.tag-chip {
 }
 
 .tag-suggestion:hover,
-.tag-suggestion:focus {
+.tag-suggestion:focus,
+.tag-suggestion.active {
   background: var(--color-bg);
 }
 

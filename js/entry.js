@@ -76,7 +76,10 @@ export async function render(container, ctx) {
     accountSelect.value = selectedId ? String(selectedId) : '';
     if (!accountSelect.value) accountSelect.selectedIndex = 0;
   }
-  refreshAccountOptions();
+  // "HDFC UPI" is the default account for a new transaction when no other
+  // selection has been made yet (e.g. by editing an existing one below).
+  const defaultAccount = accounts.find((a) => a.name === 'HDFC UPI');
+  refreshAccountOptions(defaultAccount && defaultAccount.id);
 
   const newAccountName = el('input', { type: 'text', placeholder: 'Account name' });
   const newAccountCycle = el('input', { type: 'number', min: '1', max: '31', placeholder: 'Statement cycle start day (optional)' });
@@ -270,7 +273,11 @@ export async function render(container, ctx) {
         lineItemsPayload
       );
       notify(editingId ? 'Transaction updated' : 'Transaction added', 'success');
-      returnToList();
+      // Editing returns to wherever the user came from; adding stays on this
+      // tab so entering several transactions in a row doesn't require
+      // re-navigating back to Add each time — re-render gives a fresh form.
+      if (editingId) returnToList();
+      else navigate('entry');
     } catch (err) {
       notify(err.message, 'error');
     }

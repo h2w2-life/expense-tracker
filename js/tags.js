@@ -42,9 +42,18 @@ export function mountTagInput(container, opts = {}) {
     }
   }
 
+  let activeIndex = -1;
+
   function hideSuggestions() {
     suggestionBox.hidden = true;
     suggestionBox.innerHTML = '';
+    activeIndex = -1;
+  }
+
+  function highlightActive() {
+    const items = suggestionBox.querySelectorAll('.tag-suggestion');
+    items.forEach((item, i) => item.classList.toggle('active', i === activeIndex));
+    if (activeIndex >= 0) items[activeIndex].scrollIntoView({ block: 'nearest' });
   }
 
   function showSuggestions() {
@@ -53,6 +62,7 @@ export function mountTagInput(container, opts = {}) {
     const matches = allTagNames.filter((n) => n.includes(query) && !chips.includes(n)).slice(0, 8);
     if (matches.length === 0) return hideSuggestions();
     suggestionBox.innerHTML = '';
+    activeIndex = -1;
     for (const match of matches) {
       const item = el('button', { type: 'button', class: 'tag-suggestion' }, match);
       item.addEventListener('mousedown', (e) => {
@@ -75,9 +85,19 @@ export function mountTagInput(container, opts = {}) {
 
   textInput.addEventListener('input', showSuggestions);
   textInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ',') {
+    const items = suggestionBox.hidden ? [] : suggestionBox.querySelectorAll('.tag-suggestion');
+    if (e.key === 'ArrowDown' && items.length > 0) {
       e.preventDefault();
-      addChip(textInput.value);
+      activeIndex = (activeIndex + 1) % items.length;
+      highlightActive();
+    } else if (e.key === 'ArrowUp' && items.length > 0) {
+      e.preventDefault();
+      activeIndex = (activeIndex - 1 + items.length) % items.length;
+      highlightActive();
+    } else if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      if (activeIndex >= 0 && items[activeIndex]) addChip(items[activeIndex].textContent);
+      else addChip(textInput.value);
     } else if (e.key === 'Backspace' && textInput.value === '' && chips.length > 0) {
       chips.pop();
       renderChips();
