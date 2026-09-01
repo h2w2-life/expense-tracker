@@ -6,7 +6,8 @@ import { listTransactionsWithLineItems, listAccounts, listTags, deleteTransactio
 import { formatINR } from './money.js';
 import { el, field } from './dom.js';
 import { mountTransactionFilters } from './filters.js';
-import { askSeriesScope, openSeriesFutureEditDialog, applySeriesFuturePatch } from './recurring.js';
+import { askSeriesScope, openSeriesFutureEditDialog, applySeriesFuturePatch, mountRecurringButton } from './recurring.js';
+import { mountAddButton } from './entry.js';
 
 export async function render(container, ctx) {
   const { notify, navigate, params = {} } = ctx;
@@ -17,6 +18,13 @@ export async function render(container, ctx) {
   let [txns, accounts, tags] = await Promise.all([listTransactionsWithLineItems(), listAccounts(), listTags()]);
   const accountsById = new Map(accounts.map((a) => [a.id, a]));
   const tagsById = new Map(tags.map((t) => [t.id, t.name]));
+
+  root.appendChild(
+    el('div', { class: 'tab-actions' }, [
+      mountAddButton({ notify, onSaved: () => refresh() }),
+      mountRecurringButton({ notify, onCreated: () => refresh() }),
+    ])
+  );
 
   // A round-trip through the Add/Edit form (see the `filters` param) carries
   // a full filter-state snapshot to restore — see filters.js's getState()
@@ -90,7 +98,7 @@ export async function render(container, ctx) {
 
     listEl.innerHTML = '';
     if (filtered.length === 0) {
-      const message = txns.length === 0 ? 'No transactions yet. Add one from the Add tab.' : 'No transactions match the current filters.';
+      const message = txns.length === 0 ? 'No transactions yet. Use the Add button above to create one.' : 'No transactions match the current filters.';
       listEl.appendChild(el('p', { class: 'empty-state' }, message));
       return;
     }

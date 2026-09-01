@@ -1,6 +1,8 @@
 // Add/edit transaction form: splits into 1..N line items, mandatory tags,
 // auto-calc-the-one-blank-field (stated total or a line item amount), and
-// inline account creation.
+// inline account creation. mountEntryForm() is the reusable core, used both
+// by the full-page edit route (render, below) and by mountAddButton's modal
+// on the Transactions tab.
 
 import {
   listAccounts,
@@ -15,7 +17,6 @@ import { rupeesToPaise, paiseToInputValue } from './money.js';
 import { tryEvaluate, bindAmountField } from './calc.js';
 import { mountTagInput } from './tags.js';
 import { el, field } from './dom.js';
-import { mountRecurringButton } from './recurring.js';
 
 function todayISO() {
   const d = new Date();
@@ -23,19 +24,17 @@ function todayISO() {
   return new Date(d - tz).toISOString().slice(0, 10);
 }
 
-export async function render(container, ctx) {
-  const { notify, navigate, params } = ctx;
-  const editingId = params && params.editId;
-  // Editing from the Transactions tab carries its filter snapshot along so
-  // save/cancel can return to the same filtered view instead of resetting it.
-  const returnToList = () => navigate('list', params && params.filters ? { filters: params.filters } : undefined);
-
-  container.innerHTML = '';
-  const root = el('div', { class: 'view entry-view' });
-  root.appendChild(el('h2', {}, editingId ? 'Edit transaction' : 'Add transaction'));
-  const form = el('form', { class: 'card entry-form' });
-  root.appendChild(form);
-  container.appendChild(root);
+/**
+ * Builds the add/edit transaction form into `container` (appended, not
+ * cleared — caller owns that). `onSaved`/`onCancel` decide what happens
+ * next (navigate away, close a modal, reset for another entry, ...) rather
+ * than this function assuming it's the whole page.
+ * @param {HTMLElement} container
+ * @param {{ notify: Function, editingId?: number, onSaved: () => void, onCancel: () => void }} opts
+ */
+export async function mountEntryForm(container, { notify, editingId, onSaved, onCancel }) {
+  const form = el('form', { class: 'entry-form' });
+  container.appendChild(form);
 
   let accounts = await listAccounts();
 
@@ -131,14 +130,7 @@ export async function render(container, ctx) {
 
   const submitBtn = el('button', { type: 'submit', class: 'btn btn-primary' }, editingId ? 'Save changes' : 'Add transaction');
   const cancelBtn = el('button', { type: 'button', class: 'btn btn-link' }, 'Cancel');
-  cancelBtn.addEventListener('click', returnToList);
-
-  const formActions = [submitBtn, cancelBtn];
-  if (!editingId) {
-    // A recurring series is a distinct up-front batch-create action, not
-    // something to toggle on mid-edit of a single transaction.
-    formActions.push(mountRecurringButton({ notify, onCreated: () => navigate('entry') }));
-  }
+  cancelBtn.addEventListener('click', onCancel);
 
   form.append(
     el('div', { class: 'form-grid' }, [field('Date', dateInput), field('Type', typeSelect)]),
@@ -148,7 +140,7 @@ export async function render(container, ctx) {
     el('h3', {}, 'Line items'),
     lineItemsContainer,
     addLineItemBtn,
-    el('div', { class: 'form-actions' }, formActions)
+    el('div', { class: 'form-actions' }, [submitBtn, cancelBtn])
   );
 
   // Preserved untouched through save if this transaction is one occurrence
@@ -162,7 +154,7 @@ export async function render(container, ctx) {
     const txn = await getTransaction(editingId);
     if (!txn) {
       notify('Transaction not found', 'error');
-      returnToList();
+      onCancel();
       return;
     }
     seriesId = txn.seriesId;
@@ -268,13 +260,75 @@ export async function render(container, ctx) {
         lineItemsPayload
       );
       notify(editingId ? 'Transaction updated' : 'Transaction added', 'success');
-      // Editing returns to wherever the user came from; adding stays on this
-      // tab so entering several transactions in a row doesn't require
-      // re-navigating back to Add each time — re-render gives a fresh form.
-      if (editingId) returnToList();
-      else navigate('entry');
+      onSaved();
     } catch (err) {
       notify(err.message, 'error');
     }
   }
+}
+
+// Full-page route, used only for editing (navigate('entry', { editId, filters })
+// from Transactions) — adding a new transaction now happens via
+// mountAddButton's modal instead, see js/list.js.
+export async function render(container, ctx) {
+  const { notify, navigate, params } = ctx;
+  const editingId = params && params.editId;
+  // Carries the filter snapshot along so save/cancel return to the same
+  // filtered Transactions view instead of resetting it.
+  const returnToList = () => navigate('list', params && params.filters ? { filters: params.filters } : undefined);
+
+  container.innerHTML = '';
+  const root = el('div', { class: 'view entry-view' });
+  root.appendChild(el('h2', {}, editingId ? 'Edit transaction' : 'Add transaction'));
+  const formHost = el('div', { class: 'card' });
+  root.appendChild(formHost);
+  container.appendChild(root);
+
+  await mountEntryForm(formHost, {
+    notify,
+    editingId,
+    onSaved: () => {
+      // Editing returns to wherever the user came from; adding (the
+      // fallback case if this route is ever reached without an editId)
+      // stays and resets to a fresh form, same as the modal does.
+      if (editingId) returnToList();
+      else navigate('entry');
+    },
+    onCancel: returnToList,
+  });
+}
+
+/**
+ * Mounts an "Add" button that opens a modal with the same add-transaction
+ * form as the full-page route — always creates a new transaction, never
+ * edits. Stays open after a successful save (reset to a blank form) so
+ * entering several in a row doesn't require reopening the modal each time.
+ * @param {{ notify: Function, onSaved?: () => void }} opts
+ * @returns {HTMLElement} the button to place wherever the caller wants
+ */
+export function mountAddButton({ notify, onSaved }) {
+  const dialog = el('dialog', { class: 'modal-dialog' });
+  document.body.appendChild(dialog);
+
+  const openBtn = el('button', { type: 'button', class: 'btn btn-primary' }, 'Add');
+  openBtn.addEventListener('click', () => {
+    build();
+    dialog.showModal();
+  });
+
+  function build() {
+    dialog.innerHTML = '';
+    dialog.appendChild(el('h3', {}, 'Add transaction'));
+    mountEntryForm(dialog, {
+      notify,
+      editingId: null,
+      onSaved: () => {
+        build();
+        if (onSaved) onSaved();
+      },
+      onCancel: () => dialog.close(),
+    });
+  }
+
+  return openBtn;
 }

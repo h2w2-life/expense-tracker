@@ -1,10 +1,11 @@
-// Recurring-transaction UI: the "+ Recurring transaction" button + dialog on
-// the Add tab (creates a whole series up front — no splits, per the series
-// constraint), plus the "this only" vs "this and all future" scope prompt
-// and bulk-edit dialog used by js/list.js for editing/deleting an existing
-// series occurrence. A recurring transaction has no special representation
-// in storage — see db.js's createRecurringTransactions/saveTransaction —
-// these are just dialogs that call the same functions the Add form does.
+// Recurring-transaction UI: the "Add recurring" button + dialog on the
+// Transactions tab (creates a whole series up front — no splits, per the
+// series constraint), plus the "this only" vs "this and all future" scope
+// prompt and bulk-edit dialog used by js/list.js for editing/deleting an
+// existing series occurrence. A recurring transaction has no special
+// representation in storage — see db.js's createRecurringTransactions/
+// saveTransaction — these are just dialogs that call the same functions the
+// Add form does.
 
 import { listAccounts, findOrCreateTags, createRecurringTransactions, saveTransaction } from './db.js';
 import { rupeesToPaise, paiseToInputValue } from './money.js';
@@ -30,16 +31,15 @@ function buildAccountSelect(accounts, selectedId) {
 }
 
 /**
- * Mounts a "+ Recurring transaction" button (return value — place it
- * wherever the caller wants) that opens a modal for materializing a whole
- * series up front.
+ * Mounts an "Add recurring" button (return value — place it wherever the
+ * caller wants) that opens a modal for materializing a whole series up front.
  * @param {{ notify: Function, onCreated: () => void }} opts
  */
 export function mountRecurringButton({ notify, onCreated }) {
   const dialog = el('dialog', { class: 'modal-dialog' });
   document.body.appendChild(dialog);
 
-  const openBtn = el('button', { type: 'button', class: 'btn btn-secondary' }, '+ Recurring transaction');
+  const openBtn = el('button', { type: 'button', class: 'btn btn-primary' }, 'Add recurring');
   openBtn.addEventListener('click', async () => {
     const accounts = await listAccounts();
     buildForm(accounts);

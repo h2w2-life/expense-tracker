@@ -193,6 +193,15 @@ input.field-invalid {
   margin-top: var(--space-4);
 }
 
+.tab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
 .inline-new-account {
   border: 1px dashed var(--color-border);
   border-radius: var(--radius);

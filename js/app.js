@@ -25,7 +25,7 @@ function notify(message, type = 'info') {
 let selfInitiatedHashChange = false;
 
 async function activate(name, params = {}) {
-  if (!views[name]) name = 'entry';
+  if (!views[name]) name = 'list';
   for (const btn of tabButtons) btn.classList.toggle('active', btn.dataset.view === name);
   if (window.location.hash.slice(1) !== name) {
     selfInitiatedHashChange = true;
@@ -60,7 +60,7 @@ window.addEventListener('hashchange', () => {
 });
 
 const initialHash = window.location.hash.slice(1);
-activate(views[initialHash] ? initialHash : 'entry');
+activate(views[initialHash] ? initialHash : 'list');
 
 if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
   window.addEventListener('load', () => {
