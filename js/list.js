@@ -1,36 +1,11 @@
-// Transaction list: period/account/type/tag filters (shared shape with the
-// old Analysis tab), a collapsible income/expense/net summary + by-account
-// breakdown, a needs-reconciliation list, and the transaction rows
+// Transaction list: shared period/account/type/tag filters (see filters.js),
+// date/amount sorting, a needs-reconciliation list, and the transaction rows
 // themselves (expandable, edit/delete, reconciliation-mismatch badge).
 
 import { listTransactionsWithLineItems, listAccounts, listTags, deleteTransaction } from './db.js';
 import { formatINR } from './money.js';
 import { el, field } from './dom.js';
-import { mountTagFilterInput } from './tags.js';
-
-function daysInMonth(year, month) {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-function isoDate(year, month, day) {
-  const d = Math.min(day, daysInMonth(year, month));
-  return `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-}
-
-function addMonths(year, month, delta) {
-  const total = year * 12 + (month - 1) + delta;
-  return { year: Math.floor(total / 12), month: (total % 12) + 1 };
-}
-
-// A statement cycle labeled by month M runs from `cycleStartDay` of the
-// previous month through the day before `cycleStartDay` of month M.
-function statementCyclePeriod(year, month, cycleStartDay) {
-  const prev = addMonths(year, month, -1);
-  const start = isoDate(prev.year, prev.month, cycleStartDay);
-  const endDay = cycleStartDay === 1 ? daysInMonth(year, month) : cycleStartDay - 1;
-  const end = isoDate(year, month, endDay);
-  return { start, end };
-}
+import { mountTransactionFilters } from './filters.js';
 
 export async function render(container, ctx) {
   const { notify, navigate, params = {} } = ctx;
@@ -38,136 +13,51 @@ export async function render(container, ctx) {
   const root = el('div', { class: 'view list-view' });
   root.appendChild(el('h2', {}, 'Transactions'));
 
-  // A round-trip through the Add/Edit form (see the `filters` param below)
-  // carries a full snapshot of the filter state to restore. Absent that, an
-  // account/tag link (from this tab or Settings) should show everything tied
-  // to it, not just this month — only default to the current-month window on
-  // a plain tab click.
-  const savedFilters = params.filters || null;
-  const hasLinkFilter = !savedFilters && (params.accountId != null || params.tagId != null);
-
   let [txns, accounts, tags] = await Promise.all([listTransactionsWithLineItems(), listAccounts(), listTags()]);
   const accountsById = new Map(accounts.map((a) => [a.id, a]));
   const tagsById = new Map(tags.map((t) => [t.id, t.name]));
 
-  const now = new Date();
-  const periodModeSelect = el('select', {}, [
-    el('option', { value: 'month' }, 'Calendar month'),
-    el('option', { value: 'cycle' }, 'Statement cycle'),
-    el('option', { value: 'all' }, 'All time'),
-  ]);
-  periodModeSelect.value = savedFilters ? savedFilters.periodMode : hasLinkFilter ? 'all' : 'month';
+  // A round-trip through the Add/Edit form (see the `filters` param) carries
+  // a full filter-state snapshot to restore — see filters.js's getState()
+  // for the shape. Absent that, an account/tag link (from this tab or
+  // Settings) should show everything tied to it, not just this month — only
+  // default to the current-month window on a plain tab click.
+  const hasLinkFilter = params.accountId != null || params.tagId != null;
+  const initialFilters = params.filters || {
+    periodMode: hasLinkFilter ? 'all' : 'month',
+    accountId: params.accountId,
+    andTagIds: params.tagId != null ? [params.tagId] : [],
+  };
 
-  const monthInput = el('input', {
-    type: 'month',
-    value: (savedFilters && savedFilters.month) || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
+  const filterMount = el('div');
+  root.appendChild(filterMount);
+  const filters = mountTransactionFilters(filterMount, {
+    accounts,
+    tags,
+    lineItems: txns.flatMap((t) => t.lineItems),
+    initial: initialFilters,
   });
-  const prevMonthBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-icon month-nav-btn' }, '◀');
-  const nextMonthBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-icon month-nav-btn' }, '▶');
-  function shiftMonth(delta) {
-    const [y, m] = monthInput.value.split('-').map(Number);
-    if (!y || !m) return;
-    const next = addMonths(y, m, delta);
-    monthInput.value = `${next.year}-${String(next.month).padStart(2, '0')}`;
-    renderList();
-  }
-  prevMonthBtn.addEventListener('click', () => shiftMonth(-1));
-  nextMonthBtn.addEventListener('click', () => shiftMonth(1));
 
-  const cycleAccounts = accounts.filter((a) => a.statementCycleStartDay);
-  const cycleAccountSelect = el('select', {}, cycleAccounts.map((a) => el('option', { value: String(a.id) }, a.name)));
-  if (savedFilters && savedFilters.cycleAccountId) cycleAccountSelect.value = savedFilters.cycleAccountId;
-
-  const accountFilterSelect = el('select', {}, [
-    el('option', { value: '' }, 'All accounts'),
-    ...accounts.map((a) => el('option', { value: String(a.id) }, a.name)),
+  const sortFieldSelect = el('select', {}, [
+    el('option', { value: 'date' }, 'Date'),
+    el('option', { value: 'amount' }, 'Amount'),
   ]);
-  if (savedFilters) accountFilterSelect.value = savedFilters.accountId || '';
-  else if (params.accountId != null) accountFilterSelect.value = String(params.accountId);
-
-  const typeFilterSelect = el('select', {}, [
-    el('option', { value: '' }, 'Expense + income'),
-    el('option', { value: 'expense' }, 'Expense only'),
-    el('option', { value: 'income' }, 'Income only'),
+  const sortDirSelect = el('select', {}, [
+    el('option', { value: 'desc' }, 'Descending'),
+    el('option', { value: 'asc' }, 'Ascending'),
   ]);
-  if (savedFilters) typeFilterSelect.value = savedFilters.type || '';
-
-  const andTagsMount = el('div', { class: 'tag-filter-mount' });
-  const notTagsMount = el('div', { class: 'tag-filter-mount' });
-
-  const monthField = field('Month', el('div', { class: 'month-field-row' }, [prevMonthBtn, monthInput, nextMonthBtn]));
-  monthField.classList.add('period-month-field');
-  const cycleField = field('Cycle account', cycleAccountSelect);
-  cycleField.classList.add('period-cycle-field');
-
   root.appendChild(
     el('div', { class: 'card filter-bar' }, [
-      el('div', { class: 'filter-row filter-row-3' }, [field('Period', periodModeSelect), monthField, cycleField]),
-      el('div', { class: 'filter-row filter-row-2' }, [field('Account', accountFilterSelect), field('Type', typeFilterSelect)]),
-      el('div', { class: 'filter-row filter-row-2' }, [
-        field('Tags — must have ALL of', andTagsMount),
-        field('Tags — must have NONE of', notTagsMount),
-      ]),
+      el('div', { class: 'filter-row filter-row-2' }, [field('Sort by', sortFieldSelect), field('Direction', sortDirSelect)]),
     ])
   );
 
-  if (cycleAccounts.length === 0) {
-    cycleField.appendChild(el('p', { class: 'field-hint' }, 'No accounts have a statement cycle day set (see Settings).'));
-  }
-
-  const andWidget = mountTagFilterInput(andTagsMount, tags, {
-    initialIds: savedFilters ? savedFilters.andTagIds : params.tagId != null ? [params.tagId] : [],
-  });
-  const notWidget = mountTagFilterInput(notTagsMount, tags, {
-    initialIds: savedFilters ? savedFilters.notTagIds : [],
-  });
-
-  function updatePeriodFieldVisibility() {
-    const mode = periodModeSelect.value;
-    monthField.hidden = mode === 'all';
-    cycleField.hidden = mode !== 'cycle';
-  }
-  updatePeriodFieldVisibility();
-
-  function currentPeriodRange() {
-    const mode = periodModeSelect.value;
-    if (mode === 'all') return null;
-    if (mode === 'month') {
-      const [y, m] = monthInput.value.split('-').map(Number);
-      if (!y || !m) return null;
-      return { start: isoDate(y, m, 1), end: isoDate(y, m, daysInMonth(y, m)) };
-    }
-    const account = accountsById.get(Number(cycleAccountSelect.value));
-    if (!account || !account.statementCycleStartDay) return null;
-    const [y, m] = monthInput.value.split('-').map(Number);
-    if (!y || !m) return null;
-    return statementCyclePeriod(y, m, account.statementCycleStartDay);
-  }
-
-  const summarySection = el('div', { class: 'card analysis-section collapsible' });
   const reconSection = el('div', { class: 'card analysis-section' });
   const listEl = el('div', { class: 'txn-list' });
-  root.append(summarySection, reconSection, listEl);
+  root.append(reconSection, listEl);
   container.appendChild(root);
 
-  let summaryExpanded = false;
   let reconExpanded = false;
-
-  // Snapshot of every filter control, threaded through the Add/Edit form via
-  // navigate('entry', { editId, filters }) and back via navigate('list',
-  // { filters }) on save/cancel — otherwise editing a transaction drops the
-  // filters back to the tab's plain defaults.
-  function currentFiltersSnapshot() {
-    return {
-      periodMode: periodModeSelect.value,
-      month: monthInput.value,
-      cycleAccountId: cycleAccountSelect.value,
-      accountId: accountFilterSelect.value,
-      type: typeFilterSelect.value,
-      andTagIds: andWidget.getSelectedIds(),
-      notTagIds: notWidget.getSelectedIds(),
-    };
-  }
 
   function renderRecon() {
     renderReconciliation(reconSection, txns, accountsById, navigate, {
@@ -176,52 +66,25 @@ export async function render(container, ctx) {
         reconExpanded = !reconExpanded;
         renderRecon();
       },
-      getFilters: currentFiltersSnapshot,
+      getFilters: filters.getState,
     });
   }
 
+  function txnTotal(t) {
+    return t.statedTotal ?? t.lineItems.reduce((s, li) => s + li.amount, 0);
+  }
+
   function renderList() {
-    const range = currentPeriodRange();
-    const accountFilter = accountFilterSelect.value ? Number(accountFilterSelect.value) : null;
-    const typeFilter = typeFilterSelect.value || null;
-    const andTagIds = andWidget.getSelectedIds();
-    const notTagIds = notWidget.getSelectedIds();
+    const filtered = txns.filter((t) => filters.matchesTransaction(t));
 
-    const filtered = txns.filter((t) => {
-      if (range && (t.date < range.start || t.date > range.end)) return false;
-      if (accountFilter && t.accountId !== accountFilter) return false;
-      if (typeFilter && t.type !== typeFilter) return false;
-      if (andTagIds.length && !andTagIds.every((id) => t.lineItems.some((li) => li.tagIds.includes(id)))) return false;
-      if (notTagIds.length && notTagIds.some((id) => t.lineItems.some((li) => li.tagIds.includes(id)))) return false;
-      return true;
-    });
-
-    // A split transaction can pass the tag filter above via just one of its
-    // line items — the summary should only total the items that actually
-    // carry the filtered tags, not the whole transaction.
-    const summaryLineItems = [];
-    for (const t of filtered) {
-      for (const li of t.lineItems) {
-        if (andTagIds.length && !andTagIds.every((id) => li.tagIds.includes(id))) continue;
-        if (notTagIds.length && notTagIds.some((id) => li.tagIds.includes(id))) continue;
-        summaryLineItems.push({ ...li, type: t.type, accountId: t.accountId });
-      }
-    }
-
-    renderSummary(summarySection, summaryLineItems, accountsById, {
-      expanded: summaryExpanded,
-      onToggle: () => {
-        summaryExpanded = !summaryExpanded;
-        renderList();
-      },
-      onTypeClick: (type) => {
-        typeFilterSelect.value = type;
-        renderList();
-      },
-      onAccountClick: (accId) => {
-        accountFilterSelect.value = String(accId);
-        renderList();
-      },
+    const sortField = sortFieldSelect.value;
+    const dir = sortDirSelect.value === 'asc' ? 1 : -1;
+    filtered.sort((a, b) => {
+      const av = sortField === 'amount' ? txnTotal(a) : a.date;
+      const bv = sortField === 'amount' ? txnTotal(b) : b.date;
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
     });
 
     listEl.innerHTML = '';
@@ -236,8 +99,8 @@ export async function render(container, ctx) {
           notify,
           navigate,
           refresh,
-          addTagFilter: andWidget.addSelectedId,
-          getFilters: currentFiltersSnapshot,
+          addTagFilter: filters.addAndTagFilter,
+          getFilters: filters.getState,
         })
       );
     }
@@ -249,100 +112,14 @@ export async function render(container, ctx) {
     renderList();
   }
 
-  periodModeSelect.addEventListener('change', () => {
-    updatePeriodFieldVisibility();
-    renderList();
-  });
-  monthInput.addEventListener('change', renderList);
-  cycleAccountSelect.addEventListener('change', renderList);
-  accountFilterSelect.addEventListener('change', renderList);
-  typeFilterSelect.addEventListener('change', renderList);
-  andWidget.onChange(renderList);
-  notWidget.onChange(renderList);
+  filters.onChange(renderList);
+  sortFieldSelect.addEventListener('change', renderList);
+  sortDirSelect.addEventListener('change', renderList);
 
-  // Reconciliation scans every transaction regardless of the period/account/
-  // tag filters above — it's a standing "needs attention" list, not a view
-  // of the currently filtered set.
+  // Reconciliation scans every transaction regardless of the filters above
+  // — it's a standing "needs attention" list, not a view of the filtered set.
   renderRecon();
   renderList();
-}
-
-function renderSummary(section, lineItems, accountsById, { expanded, onToggle, onTypeClick, onAccountClick }) {
-  section.innerHTML = '';
-  section.classList.toggle('expanded', expanded);
-
-  const income = lineItems.filter((li) => li.type === 'income').reduce((s, li) => s + li.amount, 0);
-  const expense = lineItems.filter((li) => li.type === 'expense').reduce((s, li) => s + li.amount, 0);
-
-  const incomeLink = el('button', { type: 'button', class: 'link-chip amount-income' }, formatINR(income));
-  incomeLink.addEventListener('click', (e) => {
-    e.stopPropagation();
-    onTypeClick('income');
-  });
-  const expenseLink = el('button', { type: 'button', class: 'link-chip amount-expense' }, formatINR(expense));
-  expenseLink.addEventListener('click', (e) => {
-    e.stopPropagation();
-    onTypeClick('expense');
-  });
-  const netLink = el('button', { type: 'button', class: 'link-chip' }, formatINR(income - expense));
-  netLink.addEventListener('click', (e) => {
-    e.stopPropagation();
-    onTypeClick('');
-  });
-
-  const header = el('div', { class: 'collapsible-header' }, [
-    el('h3', {}, 'Summary'),
-    el('span', { class: 'collapsible-toggle' }, expanded ? '▲' : '▼'),
-  ]);
-  header.addEventListener('click', onToggle);
-  section.appendChild(header);
-
-  section.appendChild(
-    el('div', { class: 'summary-grid' }, [
-      el('div', { class: 'summary-stat' }, [el('div', { class: 'summary-label' }, 'Income'), el('div', { class: 'summary-value' }, incomeLink)]),
-      el('div', { class: 'summary-stat' }, [el('div', { class: 'summary-label' }, 'Expense'), el('div', { class: 'summary-value' }, expenseLink)]),
-      el('div', { class: 'summary-stat' }, [el('div', { class: 'summary-label' }, 'Net'), el('div', { class: 'summary-value' }, netLink)]),
-    ])
-  );
-
-  if (!expanded) return;
-
-  if (lineItems.length === 0) {
-    section.appendChild(el('p', { class: 'empty-state' }, 'No line items match the current filters.'));
-    return;
-  }
-
-  const byAccount = new Map();
-  for (const li of lineItems) {
-    if (!byAccount.has(li.accountId)) byAccount.set(li.accountId, { income: 0, expense: 0 });
-    const bucket = byAccount.get(li.accountId);
-    if (li.type === 'income') bucket.income += li.amount;
-    else bucket.expense += li.amount;
-  }
-  section.appendChild(el('h4', {}, 'By account'));
-  const tbody = el('tbody');
-  for (const [accId, bucket] of byAccount) {
-    const acc = accountsById.get(accId);
-    tbody.appendChild(
-      el('tr', {}, [
-        el(
-          'td',
-          {},
-          acc
-            ? el('button', { type: 'button', class: 'txn-account link-chip', onclick: () => onAccountClick(accId) }, acc.name)
-            : '(deleted account)'
-        ),
-        el('td', { class: 'amount-income' }, formatINR(bucket.income)),
-        el('td', { class: 'amount-expense' }, formatINR(bucket.expense)),
-      ])
-    );
-  }
-  section.appendChild(
-    el('table', { class: 'analysis-table' }, [
-      el('thead', {}, el('tr', {}, [el('th', {}, 'Account'), el('th', {}, 'Income'), el('th', {}, 'Expense')])),
-      tbody,
-    ])
-  );
 }
 
 function renderReconciliation(section, txns, accountsById, navigate, { expanded, onToggle, getFilters }) {

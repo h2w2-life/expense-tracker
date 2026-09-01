@@ -587,6 +587,58 @@ button.tag-chip {
   border-bottom: 1px solid var(--color-border);
 }
 
+.tag-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.tag-chart-row {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) 2fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: auto;
+  padding: var(--space-1) 0;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tag-chart-label {
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-chart-bar-track {
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  overflow: hidden;
+  height: 18px;
+}
+
+.tag-chart-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: var(--radius);
+}
+
+.tag-chart-row:hover .tag-chart-bar-fill {
+  background: var(--color-danger);
+}
+
+.tag-chart-amount {
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .month-field-row {
   display: flex;
   align-items: center;
