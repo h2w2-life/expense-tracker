@@ -607,22 +607,40 @@ button.tag-chip {
   border-bottom: 1px solid var(--color-border);
 }
 
+/* A real table so the bar-track column is the same width/position on every
+   row — flex/grid rows sized themselves independently based on that row's
+   own amount-text width, so bars drifted and weren't the same length. */
 .tag-chart {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
   margin-top: var(--space-3);
 }
 
-.tag-chart-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
+.tag-chart td {
+  border: none;
+  padding: var(--space-1) 0;
+  vertical-align: middle;
+}
+
+.tag-chart-cell-remove {
+  width: 36px;
+}
+
+.tag-chart-cell-label {
+  width: 30%;
+  padding-right: var(--space-2);
+}
+
+.tag-chart-cell-amount {
+  width: 80px;
+  text-align: right;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .tag-chart-remove {
-  flex: 0 0 auto;
   min-height: 28px;
   min-width: 28px;
   width: 28px;
@@ -637,29 +655,18 @@ button.tag-chip {
   cursor: pointer;
 }
 
-.tag-chart-main {
-  display: grid;
-  grid-template-columns: minmax(80px, 1fr) 2fr auto;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: auto;
-  padding: var(--space-1) 0;
-  background: none;
-  border: none;
-  text-align: left;
-  cursor: pointer;
-}
-
 .tag-chart-label {
+  display: block;
+  width: 100%;
   font-size: 0.85rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
 }
 
 .tag-chart-bar-track {
+  display: block;
   background: var(--color-bg);
   border-radius: var(--radius);
   overflow: hidden;
@@ -673,14 +680,8 @@ button.tag-chip {
   border-radius: var(--radius);
 }
 
-.tag-chart-main:hover .tag-chart-bar-fill {
+.tag-chart tr:hover .tag-chart-bar-fill {
   background: var(--color-primary-dark);
-}
-
-.tag-chart-amount {
-  font-size: 0.85rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
 }
 
 .month-field-row {

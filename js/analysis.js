@@ -186,8 +186,12 @@ function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { onHide, on
     return;
   }
 
+  // A real table, not flex/grid rows — each row's bar-track column would
+  // otherwise size itself independently based on that row's own amount
+  // text width, so bars drifted and weren't the same length. Table columns
+  // are sized consistently across every row.
   const max = entries[0].amount;
-  const chart = el('div', { class: 'tag-chart' });
+  const tbody = el('tbody');
   for (const entry of entries) {
     const pct = max ? Math.round((entry.amount / max) * 100) : 0;
 
@@ -198,18 +202,21 @@ function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { onHide, on
     );
     removeBtn.addEventListener('click', () => onHide(entry.tagId));
 
-    const mainBtn = el(
+    const labelBtn = el(
       'button',
-      { type: 'button', class: 'tag-chart-main', title: `View transactions tagged "${entry.name}"` },
-      [
-        el('span', { class: 'tag-chart-label' }, entry.name),
-        el('span', { class: 'tag-chart-bar-track' }, [el('span', { class: 'tag-chart-bar-fill', style: `width:${pct}%` })]),
-        el('span', { class: 'tag-chart-amount' }, formatINR(entry.amount)),
-      ]
+      { type: 'button', class: 'tag-chart-label link-chip', title: `View transactions tagged "${entry.name}"` },
+      entry.name
     );
-    mainBtn.addEventListener('click', () => onTagClick(entry.tagId));
+    labelBtn.addEventListener('click', () => onTagClick(entry.tagId));
 
-    chart.appendChild(el('div', { class: 'tag-chart-row' }, [removeBtn, mainBtn]));
+    tbody.appendChild(
+      el('tr', {}, [
+        el('td', { class: 'tag-chart-cell-remove' }, removeBtn),
+        el('td', { class: 'tag-chart-cell-label' }, labelBtn),
+        el('td', { class: 'tag-chart-cell-bar' }, el('span', { class: 'tag-chart-bar-track' }, [el('span', { class: 'tag-chart-bar-fill', style: `width:${pct}%` })])),
+        el('td', { class: 'tag-chart-cell-amount' }, formatINR(entry.amount)),
+      ])
+    );
   }
-  section.appendChild(chart);
+  section.appendChild(el('table', { class: 'tag-chart' }, [tbody]));
 }
