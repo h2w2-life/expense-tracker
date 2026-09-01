@@ -65,7 +65,8 @@ export async function render(container, ctx) {
 
   const reconSection = el('div', { class: 'card analysis-section' });
   const listEl = el('div', { class: 'txn-list' });
-  root.append(reconSection, listEl);
+  const listSection = el('div', { class: 'card' }, [listEl]);
+  root.append(reconSection, listSection);
   container.appendChild(root);
 
   let reconExpanded = false;
