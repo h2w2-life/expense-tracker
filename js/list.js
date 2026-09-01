@@ -6,6 +6,7 @@ import { listTransactionsWithLineItems, listAccounts, listTags, deleteTransactio
 import { formatINR } from './money.js';
 import { el, field } from './dom.js';
 import { mountTransactionFilters } from './filters.js';
+import { askSeriesScope, openSeriesFutureEditDialog, applySeriesFuturePatch } from './recurring.js';
 
 export async function render(container, ctx) {
   const { notify, navigate, params = {} } = ctx;
@@ -101,6 +102,7 @@ export async function render(container, ctx) {
           refresh,
           addTagFilter: filters.addAndTagFilter,
           getFilters: filters.getState,
+          getAllTxns: () => txns,
         })
       );
     }
@@ -166,7 +168,7 @@ function renderReconciliation(section, txns, accountsById, navigate, { expanded,
   section.appendChild(list);
 }
 
-function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, addTagFilter, getFilters }) {
+function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, addTagFilter, getFilters, getAllTxns }) {
   const sum = txn.lineItems.reduce((s, li) => s + li.amount, 0);
   const mismatch = txn.statedTotal != null && sum !== txn.statedTotal;
   const account = accountsById.get(txn.accountId);
@@ -201,6 +203,9 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, 
 
   if (txn.lineItems.length > 1) {
     header.appendChild(el('span', { class: 'badge badge-split' }, `Split (${txn.lineItems.length})`));
+  }
+  if (txn.seriesId != null) {
+    header.appendChild(el('span', { class: 'badge badge-recurring' }, 'Recurring'));
   }
 
   if (mismatch) {
@@ -250,18 +255,78 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, 
     );
   }
 
+  // Every occurrence of a series shares seriesId; seriesIndex orders them —
+  // "this and future" means this one plus every later index in the series.
+  function futureSeriesTxns() {
+    return getAllTxns()
+      .filter((t) => t.seriesId === txn.seriesId && t.seriesIndex >= txn.seriesIndex)
+      .sort((a, b) => a.seriesIndex - b.seriesIndex);
+  }
+
   const editBtn = el('button', { type: 'button', class: 'btn btn-secondary' }, 'Edit');
-  editBtn.addEventListener('click', (e) => {
+  editBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    navigate('entry', { editId: txn.id, filters: getFilters() });
+    if (txn.seriesId == null) {
+      navigate('entry', { editId: txn.id, filters: getFilters() });
+      return;
+    }
+    const scope = await askSeriesScope('This is part of a recurring series. Edit just this occurrence, or this and all future occurrences?', {
+      thisLabel: 'This occurrence only',
+      futureLabel: 'This and all future',
+    });
+    if (scope === 'this') {
+      navigate('entry', { editId: txn.id, filters: getFilters() });
+    } else if (scope === 'future') {
+      const li = txn.lineItems[0];
+      openSeriesFutureEditDialog({
+        seed: {
+          type: txn.type,
+          accountId: txn.accountId,
+          description: txn.description || (li && li.description) || '',
+          amount: li ? li.amount : 0,
+          tagNames: li ? li.tagIds.map((id) => tagsById.get(id)).filter(Boolean) : [],
+        },
+        notify,
+        onSave: async (patch) => {
+          const future = futureSeriesTxns();
+          try {
+            await applySeriesFuturePatch(future, patch);
+            notify(`Updated ${future.length} transaction${future.length === 1 ? '' : 's'}`, 'success');
+            refresh();
+          } catch (err) {
+            notify(err.message, 'error');
+          }
+        },
+      });
+    }
   });
+
   const deleteBtn = el('button', { type: 'button', class: 'btn btn-danger' }, 'Delete');
   deleteBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
-    if (!confirm(`Delete transaction on ${txn.date}${account ? ` (${account.name})` : ''}? This cannot be undone.`)) return;
+    if (txn.seriesId == null) {
+      if (!confirm(`Delete transaction on ${txn.date}${account ? ` (${account.name})` : ''}? This cannot be undone.`)) return;
+      try {
+        await deleteTransaction(txn.id);
+        notify('Transaction deleted', 'success');
+        refresh();
+      } catch (err) {
+        notify(err.message, 'error');
+      }
+      return;
+    }
+    const scope = await askSeriesScope('This is part of a recurring series. Delete just this occurrence, or this and all future occurrences?', {
+      thisLabel: 'This occurrence only',
+      futureLabel: 'This and all future',
+    });
+    if (!scope) return;
+    const toDelete = scope === 'this' ? [txn] : futureSeriesTxns();
+    const label =
+      scope === 'this' ? `the transaction on ${txn.date}` : `${toDelete.length} transaction${toDelete.length === 1 ? '' : 's'} (this and all future occurrences)`;
+    if (!confirm(`Delete ${label}? This cannot be undone.`)) return;
     try {
-      await deleteTransaction(txn.id);
-      notify('Transaction deleted', 'success');
+      for (const t of toDelete) await deleteTransaction(t.id);
+      notify(toDelete.length === 1 ? 'Transaction deleted' : `${toDelete.length} transactions deleted`, 'success');
       refresh();
     } catch (err) {
       notify(err.message, 'error');

@@ -127,3 +127,34 @@ export function tryEvaluate(expr) {
     return null;
   }
 }
+
+/**
+ * Wires an amount <input> to evaluate its arithmetic expression (e.g.
+ * "120+340+75") on blur/Enter, replacing the input's value with the result.
+ * Invalid input just gets a `field-invalid` class, not cleared, so the user
+ * can see and fix their typo.
+ * @param {HTMLInputElement} input
+ */
+export function bindAmountField(input) {
+  const resolve = () => {
+    const raw = input.value.trim();
+    if (raw === '') {
+      input.classList.remove('field-invalid');
+      return;
+    }
+    const value = tryEvaluate(raw);
+    if (value === null) {
+      input.classList.add('field-invalid');
+      return;
+    }
+    input.classList.remove('field-invalid');
+    input.value = String(Math.round(value * 100) / 100);
+  };
+  input.addEventListener('blur', resolve);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      resolve();
+    }
+  });
+}

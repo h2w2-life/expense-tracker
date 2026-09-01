@@ -12,38 +12,15 @@ import {
   listTags,
 } from './db.js';
 import { rupeesToPaise, paiseToInputValue } from './money.js';
-import { tryEvaluate } from './calc.js';
+import { tryEvaluate, bindAmountField } from './calc.js';
 import { mountTagInput } from './tags.js';
 import { el, field } from './dom.js';
+import { mountRecurringButton } from './recurring.js';
 
 function todayISO() {
   const d = new Date();
   const tz = d.getTimezoneOffset() * 60000;
   return new Date(d - tz).toISOString().slice(0, 10);
-}
-
-function bindAmountField(input) {
-  const resolve = () => {
-    const raw = input.value.trim();
-    if (raw === '') {
-      input.classList.remove('field-invalid');
-      return;
-    }
-    const value = tryEvaluate(raw);
-    if (value === null) {
-      input.classList.add('field-invalid');
-      return;
-    }
-    input.classList.remove('field-invalid');
-    input.value = String(Math.round(value * 100) / 100);
-  };
-  input.addEventListener('blur', resolve);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      resolve();
-    }
-  });
 }
 
 export async function render(container, ctx) {
@@ -156,6 +133,13 @@ export async function render(container, ctx) {
   const cancelBtn = el('button', { type: 'button', class: 'btn btn-link' }, 'Cancel');
   cancelBtn.addEventListener('click', returnToList);
 
+  const formActions = [submitBtn, cancelBtn];
+  if (!editingId) {
+    // A recurring series is a distinct up-front batch-create action, not
+    // something to toggle on mid-edit of a single transaction.
+    formActions.push(mountRecurringButton({ notify, onCreated: () => navigate('entry') }));
+  }
+
   form.append(
     el('div', { class: 'form-grid' }, [field('Date', dateInput), field('Type', typeSelect)]),
     el('div', { class: 'form-grid' }, [field('Account', accountSelect, toggleNewAccountBtn), field('Stated total', totalInput)]),
@@ -164,8 +148,15 @@ export async function render(container, ctx) {
     el('h3', {}, 'Line items'),
     lineItemsContainer,
     addLineItemBtn,
-    el('div', { class: 'form-actions' }, [submitBtn, cancelBtn])
+    el('div', { class: 'form-actions' }, formActions)
   );
+
+  // Preserved untouched through save if this transaction is one occurrence
+  // of a recurring series (see db.js's saveTransaction) — this form has no
+  // way to change series membership, only js/recurring.js's "this and
+  // future" bulk-edit does.
+  let seriesId;
+  let seriesIndex;
 
   if (editingId) {
     const txn = await getTransaction(editingId);
@@ -174,6 +165,8 @@ export async function render(container, ctx) {
       returnToList();
       return;
     }
+    seriesId = txn.seriesId;
+    seriesIndex = txn.seriesIndex;
     const lineItems = await listLineItemsForTransaction(editingId);
     const allTags = await listTags();
     const tagsById = new Map(allTags.map((t) => [t.id, t.name]));
@@ -269,6 +262,8 @@ export async function render(container, ctx) {
           accountId: Number(accountSelect.value),
           description: descInput.value.trim(),
           statedTotal: rupeesToPaise(total),
+          seriesId,
+          seriesIndex,
         },
         lineItemsPayload
       );

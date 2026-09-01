@@ -261,8 +261,15 @@ export async function listTransactionsWithLineItems() {
  * Create or fully replace a transaction and its line items in one atomic
  * IndexedDB transaction. Pass `id` to edit an existing transaction (its
  * previous line items are deleted and replaced wholesale); omit it to create.
+ *
+ * `seriesId`/`seriesIndex` mark a transaction as one occurrence of a
+ * recurring series (see createRecurringTransactions below) — omit both for a
+ * normal one-off transaction. Editing a series transaction must pass through
+ * whatever seriesId/seriesIndex it already had (see entry.js) or the edit
+ * will silently detach it from its series, since this always fully replaces
+ * the stored record rather than merging into it.
  */
-export async function saveTransaction({ id, date, type, accountId, description, statedTotal }, lineItems) {
+export async function saveTransaction({ id, date, type, accountId, description, statedTotal, seriesId, seriesIndex }, lineItems) {
   if (!date) throw new Error('Date is required');
   if (type !== 'expense' && type !== 'income') throw new Error('Type must be "expense" or "income"');
   if (!accountId) throw new Error('Account is required');
@@ -279,6 +286,10 @@ export async function saveTransaction({ id, date, type, accountId, description, 
   const liStore = tx.objectStore('lineItems');
 
   const txnRecord = { date, type, accountId, description: description || '', statedTotal };
+  if (seriesId != null) {
+    txnRecord.seriesId = seriesId;
+    txnRecord.seriesIndex = seriesIndex;
+  }
   let transactionId = id;
   if (id) {
     txnRecord.id = id;
@@ -303,6 +314,57 @@ export async function deleteTransaction(id) {
   const existing = await promisifyRequest(liStore.index('transactionId').getAll(id));
   for (const li of existing) liStore.delete(li.id);
   await promisifyTransaction(tx);
+}
+
+// ---------- Recurring transactions ----------
+//
+// A "recurring transaction" is not its own concept in storage — it's just
+// `count` normal single-line-item transactions, materialized up front and
+// linked by a shared `seriesId` (with each one's position recorded in
+// `seriesIndex`). That's what makes them exportable/importable and
+// editable/deletable exactly like any other transaction (see saveTransaction
+// above and js/list.js's per-row Edit/Delete, which offer a "this only" vs
+// "this and future" choice whenever seriesId is present).
+
+function addInterval(dateStr, unit, x) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (unit === 'weeks') {
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + 7 * x);
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+  }
+  // months -- clamp the day to the target month's length, e.g. Jan 31 + 1 month -> Feb 28.
+  const totalMonths = m - 1 + x;
+  const targetYear = y + Math.floor(totalMonths / 12);
+  const targetMonth = (totalMonths % 12) + 1;
+  const daysInTargetMonth = new Date(Date.UTC(targetYear, targetMonth, 0)).getUTCDate();
+  const targetDay = Math.min(d, daysInTargetMonth);
+  return `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
+}
+
+/**
+ * Materializes a recurring series: `count` transactions (1-12), each with
+ * exactly one line item (no splits), spaced `intervalX` (1-12)
+ * `intervalUnit` ("weeks"|"months") apart, starting at `date`.
+ * @returns {Promise<number[]>} the created transaction ids, in order
+ */
+export async function createRecurringTransactions({ date, type, accountId, description, amount, tagIds, intervalUnit, intervalX, count }) {
+  if (intervalUnit !== 'weeks' && intervalUnit !== 'months') throw new Error('Interval unit must be "weeks" or "months"');
+  if (!Number.isInteger(intervalX) || intervalX < 1 || intervalX > 12) throw new Error('Interval must be between 1 and 12');
+  if (!Number.isInteger(count) || count < 1 || count > 12) throw new Error('Number of occurrences must be between 1 and 12');
+
+  const seriesId = (crypto.randomUUID && crypto.randomUUID()) || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const ids = [];
+  let occurrenceDate = date;
+  for (let i = 0; i < count; i++) {
+    if (i > 0) occurrenceDate = addInterval(occurrenceDate, intervalUnit, intervalX);
+    const id = await saveTransaction(
+      { date: occurrenceDate, type, accountId, description, statedTotal: amount, seriesId, seriesIndex: i },
+      [{ amount, description, tagIds }]
+    );
+    ids.push(id);
+  }
+  return ids;
 }
 
 // ---------- Backup / restore ----------
