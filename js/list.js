@@ -51,10 +51,12 @@ export async function render(container, ctx) {
     el('option', { value: 'date' }, 'Date'),
     el('option', { value: 'amount' }, 'Amount'),
   ]);
+  if (params.filters && params.filters.sortField) sortFieldSelect.value = params.filters.sortField;
   const sortDirSelect = el('select', {}, [
     el('option', { value: 'desc' }, 'Descending'),
     el('option', { value: 'asc' }, 'Ascending'),
   ]);
+  if (params.filters && params.filters.sortDir) sortDirSelect.value = params.filters.sortDir;
   root.appendChild(
     el('div', { class: 'card filter-bar' }, [
       el('div', { class: 'filter-row filter-row-2' }, [field('Sort by', sortFieldSelect), field('Direction', sortDirSelect)]),
@@ -68,6 +70,14 @@ export async function render(container, ctx) {
 
   let reconExpanded = false;
 
+  // filters.getState() alone doesn't cover sort — that's a Transactions-only
+  // concept, not part of the shared filters.js module — so round-tripping a
+  // transaction through the edit form (see js/entry.js's `filters` param)
+  // would otherwise silently reset Sort by/Direction back to their defaults.
+  function currentFiltersSnapshot() {
+    return { ...filters.getState(), sortField: sortFieldSelect.value, sortDir: sortDirSelect.value };
+  }
+
   function renderRecon() {
     renderReconciliation(reconSection, txns, accountsById, navigate, {
       expanded: reconExpanded,
@@ -75,7 +85,7 @@ export async function render(container, ctx) {
         reconExpanded = !reconExpanded;
         renderRecon();
       },
-      getFilters: filters.getState,
+      getFilters: currentFiltersSnapshot,
     });
   }
 
@@ -109,7 +119,7 @@ export async function render(container, ctx) {
           navigate,
           refresh,
           addTagFilter: filters.addAndTagFilter,
-          getFilters: filters.getState,
+          getFilters: currentFiltersSnapshot,
           getAllTxns: () => txns,
         })
       );
