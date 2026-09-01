@@ -7,7 +7,8 @@ import { formatINR } from './money.js';
 import { el } from './dom.js';
 import { mountTransactionFilters, currentMonthValue } from './filters.js';
 
-export async function render(container) {
+export async function render(container, ctx) {
+  const { navigate } = ctx;
   container.innerHTML = '';
   const root = el('div', { class: 'view analysis-view' });
   root.appendChild(el('h2', {}, 'Dashboard'));
@@ -64,6 +65,13 @@ export async function render(container) {
       onReset: () => {
         hiddenTagIds.clear();
         renderAll();
+      },
+      onTagClick: (tagId) => {
+        // Carry the Dashboard's current filters over to Transactions,
+        // adding this tag to the ALL set (unless it's already there).
+        const state = filters.getState();
+        const andTagIds = state.andTagIds.includes(tagId) ? state.andTagIds : [...state.andTagIds, tagId];
+        navigate('list', { filters: { ...state, andTagIds } });
       },
     });
   }
@@ -150,7 +158,7 @@ function renderSummary(section, lineItems, accountsById, { expanded, onToggle, o
   );
 }
 
-function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { onHide, onReset }) {
+function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { onHide, onReset, onTagClick }) {
   section.innerHTML = '';
 
   const headerRow = el('div', { class: 'collapsible-header' }, [el('h3', {}, 'Spend by tag')]);
@@ -182,17 +190,26 @@ function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { onHide, on
   const chart = el('div', { class: 'tag-chart' });
   for (const entry of entries) {
     const pct = max ? Math.round((entry.amount / max) * 100) : 0;
-    const row = el(
+
+    const removeBtn = el(
       'button',
-      { type: 'button', class: 'tag-chart-row', title: `Click to remove "${entry.name}" from the chart` },
+      { type: 'button', class: 'tag-chart-remove', 'aria-label': `Remove "${entry.name}" from the chart` },
+      '−'
+    );
+    removeBtn.addEventListener('click', () => onHide(entry.tagId));
+
+    const mainBtn = el(
+      'button',
+      { type: 'button', class: 'tag-chart-main', title: `View transactions tagged "${entry.name}"` },
       [
         el('span', { class: 'tag-chart-label' }, entry.name),
         el('span', { class: 'tag-chart-bar-track' }, [el('span', { class: 'tag-chart-bar-fill', style: `width:${pct}%` })]),
         el('span', { class: 'tag-chart-amount' }, formatINR(entry.amount)),
       ]
     );
-    row.addEventListener('click', () => onHide(entry.tagId));
-    chart.appendChild(row);
+    mainBtn.addEventListener('click', () => onTagClick(entry.tagId));
+
+    chart.appendChild(el('div', { class: 'tag-chart-row' }, [removeBtn, mainBtn]));
   }
   section.appendChild(chart);
 }

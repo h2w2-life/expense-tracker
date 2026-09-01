@@ -615,11 +615,35 @@ button.tag-chip {
 }
 
 .tag-chart-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.tag-chart-remove {
+  flex: 0 0 auto;
+  min-height: 28px;
+  min-width: 28px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-danger);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tag-chart-main {
   display: grid;
   grid-template-columns: minmax(80px, 1fr) 2fr auto;
   align-items: center;
   gap: var(--space-2);
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: auto;
   padding: var(--space-1) 0;
   background: none;
@@ -649,8 +673,8 @@ button.tag-chip {
   border-radius: var(--radius);
 }
 
-.tag-chart-row:hover .tag-chart-bar-fill {
-  background: var(--color-danger);
+.tag-chart-main:hover .tag-chart-bar-fill {
+  background: var(--color-primary-dark);
 }
 
 .tag-chart-amount {
