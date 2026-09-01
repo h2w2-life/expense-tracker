@@ -28,10 +28,11 @@ export async function render(container, ctx) {
   });
 
   const summarySection = el('div', { class: 'card analysis-section collapsible' });
-  const chartSection = el('div', { class: 'card analysis-section' });
+  const chartSection = el('div', { class: 'card analysis-section collapsible' });
   root.append(summarySection, chartSection);
 
   let summaryExpanded = false;
+  let chartExpanded = false;
   const hiddenTagIds = new Set();
 
   function matchingLineItems() {
@@ -58,6 +59,11 @@ export async function render(container, ctx) {
     });
 
     renderTagChart(chartSection, lineItems, tagsById, hiddenTagIds, {
+      expanded: chartExpanded,
+      onToggle: () => {
+        chartExpanded = !chartExpanded;
+        renderAll();
+      },
       onHide: (tagId) => {
         hiddenTagIds.add(tagId);
         renderAll();
@@ -158,16 +164,29 @@ function renderSummary(section, lineItems, accountsById, { expanded, onToggle, o
   );
 }
 
-function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { onHide, onReset, onTagClick }) {
-  section.innerHTML = '';
+// Collapsed view shows only the "big" tags (> ₹5,000) so the chart is a
+// quick glance rather than a long scroll — expanding shows everything.
+const TAG_CHART_COLLAPSED_THRESHOLD_PAISE = 500000;
 
-  const headerRow = el('div', { class: 'collapsible-header' }, [el('h3', {}, 'Spend by tag')]);
+function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { expanded, onToggle, onHide, onReset, onTagClick }) {
+  section.innerHTML = '';
+  section.classList.toggle('expanded', expanded);
+
+  const header = el('div', { class: 'collapsible-header' }, [
+    el('h3', {}, 'Spend by tag'),
+    el('span', { class: 'collapsible-toggle' }, expanded ? '▲' : '▼'),
+  ]);
+  header.addEventListener('click', onToggle);
+  section.appendChild(header);
+
   if (hiddenTagIds.size > 0) {
     const resetBtn = el('button', { type: 'button', class: 'btn btn-link' }, `Reset (${hiddenTagIds.size} hidden)`);
-    resetBtn.addEventListener('click', onReset);
-    headerRow.appendChild(resetBtn);
+    resetBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onReset();
+    });
+    section.appendChild(resetBtn);
   }
-  section.appendChild(headerRow);
 
   const totals = new Map();
   for (const li of lineItems) {
@@ -176,13 +195,20 @@ function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { onHide, on
     }
   }
 
-  const entries = [...totals.entries()]
+  const allEntries = [...totals.entries()]
     .filter(([tagId]) => tagsById.has(tagId) && !hiddenTagIds.has(tagId))
     .map(([tagId, amount]) => ({ tagId, name: tagsById.get(tagId), amount }))
     .sort((a, b) => b.amount - a.amount);
 
-  if (entries.length === 0) {
+  if (allEntries.length === 0) {
     section.appendChild(el('p', { class: 'empty-state' }, 'No matching line items.'));
+    return;
+  }
+
+  const entries = expanded ? allEntries : allEntries.filter((e) => e.amount > TAG_CHART_COLLAPSED_THRESHOLD_PAISE);
+
+  if (entries.length === 0) {
+    section.appendChild(el('p', { class: 'empty-state' }, 'No tags over ₹5,000 — expand to see everything.'));
     return;
   }
 

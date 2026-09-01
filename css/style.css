@@ -25,6 +25,15 @@
   box-sizing: border-box;
 }
 
+/* The browser's own [hidden] rule loses to any author rule that sets
+   `display` on the same element (e.g. .field/.filter-row's display:flex/
+   grid) because author styles always beat the UA stylesheet regardless of
+   specificity — so toggling `hidden` silently did nothing on elements like
+   that. This makes `hidden` always actually hide, everywhere. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   font-size: 16px;
 }
@@ -568,10 +577,17 @@ button.tag-chip {
   gap: 0 var(--space-4);
 }
 
+.filter-bar-toggle {
+  align-self: flex-start;
+  padding: var(--space-1) 0;
+  margin-bottom: var(--space-2);
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: var(--space-3);
+  margin-top: var(--space-3);
   margin-bottom: var(--space-4);
 }
 
@@ -628,13 +644,15 @@ button.tag-chip {
 }
 
 .tag-chart-cell-label {
-  width: 30%;
+  width: 90px;
   padding-right: var(--space-2);
 }
 
 .tag-chart-cell-amount {
-  width: 80px;
+  width: 90px;
   text-align: right;
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
   font-size: 0.85rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;

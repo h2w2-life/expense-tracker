@@ -113,16 +113,23 @@ export function mountTransactionFilters(container, { accounts, tags, lineItems, 
   const cycleField = field('Cycle account', cycleAccountSelect);
   cycleField.classList.add('period-cycle-field');
 
-  container.appendChild(
-    el('div', { class: 'card filter-bar' }, [
-      el('div', { class: 'filter-row filter-row-3' }, [field('Period', periodModeSelect), monthField, cycleField]),
-      el('div', { class: 'filter-row filter-row-2' }, [field('Account', accountFilterSelect), field('Type', typeFilterSelect)]),
-      el('div', { class: 'filter-row filter-row-2' }, [
-        field('Tags — must have ALL of', andTagsMount),
-        field('Tags — must have NONE of', notTagsMount),
-      ]),
-    ])
+  const row1 = el('div', { class: 'filter-row filter-row-3' }, [field('Period', periodModeSelect), monthField, cycleField]);
+  const row2 = el('div', { class: 'filter-row filter-row-2', hidden: true }, [field('Account', accountFilterSelect), field('Type', typeFilterSelect)]);
+  const row3 = el(
+    'div',
+    { class: 'filter-row filter-row-2', hidden: true },
+    [field('Tags — must have ALL of', andTagsMount), field('Tags — must have NONE of', notTagsMount)]
   );
+  const toggleBtn = el('button', { type: 'button', class: 'btn btn-link filter-bar-toggle' }, 'More filters ▼');
+  let filtersExpanded = false;
+  toggleBtn.addEventListener('click', () => {
+    filtersExpanded = !filtersExpanded;
+    row2.hidden = !filtersExpanded;
+    row3.hidden = !filtersExpanded;
+    toggleBtn.textContent = filtersExpanded ? 'Fewer filters ▲' : 'More filters ▼';
+  });
+
+  container.appendChild(el('div', { class: 'card filter-bar' }, [row1, toggleBtn, row2, row3]));
 
   if (cycleAccounts.length === 0) {
     cycleField.appendChild(el('p', { class: 'field-hint' }, 'No accounts have a statement cycle day set (see Settings).'));
