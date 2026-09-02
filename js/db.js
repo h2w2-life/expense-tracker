@@ -2,7 +2,7 @@
 // fetch-all-then-filter-in-JS since volume is low (hundreds/month).
 
 const DB_NAME = 'expenseTrackerDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise = null;
 
@@ -30,6 +30,13 @@ function openDB() {
         const lineItems = db.createObjectStore('lineItems', { keyPath: 'id', autoIncrement: true });
         lineItems.createIndex('transactionId', 'transactionId');
         lineItems.createIndex('tagIds', 'tagIds', { multiEntry: true });
+      }
+      // v2: holds the linked auto-backup FileSystemFileHandle (see
+      // getLinkedBackupHandle/setLinkedBackupHandle below), keyed by a
+      // fixed string so there's ever only one. FileSystemFileHandle is
+      // structured-cloneable, so IndexedDB can store it directly.
+      if (!db.objectStoreNames.contains('meta')) {
+        db.createObjectStore('meta', { keyPath: 'key' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -114,6 +121,7 @@ export async function createAccount({ name, statementCycleStartDay = null }) {
   const cycleDay = normalizeCycleDay(statementCycleStartDay);
   try {
     const id = await add('accounts', { name: cleanName, statementCycleStartDay: cycleDay });
+    await syncLinkedBackupFile();
     return { id, name: cleanName, statementCycleStartDay: cycleDay };
   } catch (err) {
     if (err && err.name === 'ConstraintError') throw new Error(`Account "${cleanName}" already exists`);
@@ -134,6 +142,7 @@ export async function updateAccount(id, patch) {
     if (err && err.name === 'ConstraintError') throw new Error(`Account "${updated.name}" already exists`);
     throw err;
   }
+  await syncLinkedBackupFile();
   return updated;
 }
 
@@ -143,6 +152,7 @@ export async function deleteAccount(id) {
     throw new Error('Cannot delete an account that has transactions. Reassign or delete those first.');
   }
   await remove('accounts', id);
+  await syncLinkedBackupFile();
 }
 
 // ---------- Tags ----------
@@ -196,6 +206,7 @@ export async function renameTag(id, rawName) {
     if (err && err.name === 'ConstraintError') throw new Error(`Tag "${name}" already exists`);
     throw err;
   }
+  await syncLinkedBackupFile();
   return { id, name };
 }
 
@@ -215,6 +226,7 @@ export async function deleteTag(id) {
   }
   tx.objectStore('tags').delete(id);
   await promisifyTransaction(tx);
+  await syncLinkedBackupFile();
 }
 
 export async function countLineItemsUsingTag(id) {
@@ -303,6 +315,7 @@ export async function saveTransaction({ id, date, type, accountId, description, 
     liStore.add({ transactionId, amount: li.amount, description: li.description || '', tagIds: li.tagIds });
   }
   await promisifyTransaction(tx);
+  await syncLinkedBackupFile();
   return transactionId;
 }
 
@@ -314,6 +327,7 @@ export async function deleteTransaction(id) {
   const existing = await promisifyRequest(liStore.index('transactionId').getAll(id));
   for (const li of existing) liStore.delete(li.id);
   await promisifyTransaction(tx);
+  await syncLinkedBackupFile();
 }
 
 // ---------- Recurring transactions ----------
@@ -406,4 +420,48 @@ export async function importAll(data) {
   for (const row of data.transactions) tx.objectStore('transactions').put(row);
   for (const row of data.lineItems) tx.objectStore('lineItems').put(row);
   await promisifyTransaction(tx);
+  await syncLinkedBackupFile();
+}
+
+// ---------- Auto-backup (linked file) ----------
+//
+// Desktop-Chromium-only opt-in (File System Access API — see CLAUDE.md §17
+// for why it's not the default backup mechanism): once a file is linked via
+// Settings, every save silently rewrites it with a full export. There's no
+// silent way to write to disk without this API, and no way to get a handle
+// without a user gesture — see js/settings.js for the link/re-authorize UI.
+
+export async function getLinkedBackupHandle() {
+  const row = await getOne('meta', 'backupFileHandle');
+  return row ? row.handle : null;
+}
+
+export async function setLinkedBackupHandle(handle) {
+  await put('meta', { key: 'backupFileHandle', handle });
+}
+
+export async function clearLinkedBackupHandle() {
+  await remove('meta', 'backupFileHandle');
+}
+
+// Fire-and-forget from every mutating function below — a backup-sync
+// failure (permission revoked, handle stale, unsupported browser) must
+// never block the actual save the user is waiting on.
+export async function syncLinkedBackupFile() {
+  let handle;
+  try {
+    handle = await getLinkedBackupHandle();
+  } catch {
+    return;
+  }
+  if (!handle || typeof handle.createWritable !== 'function') return;
+  try {
+    if ((await handle.queryPermission({ mode: 'readwrite' })) !== 'granted') return;
+    const data = await exportAll();
+    const writable = await handle.createWritable();
+    await writable.write(JSON.stringify(data, null, 2));
+    await writable.close();
+  } catch (err) {
+    console.warn('Auto-backup sync failed:', err);
+  }
 }

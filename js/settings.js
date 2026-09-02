@@ -9,6 +9,10 @@ import {
   renameTag,
   deleteTag,
   countLineItemsUsingTag,
+  getLinkedBackupHandle,
+  setLinkedBackupHandle,
+  clearLinkedBackupHandle,
+  syncLinkedBackupFile,
 } from './db.js';
 import { exportToFile, importFromFile } from './backup.js';
 import { el, field } from './dom.js';
@@ -56,6 +60,90 @@ export async function render(container, ctx) {
     el('div', { class: 'form-actions' }, [exportBtn, importBtn, importInput]),
   ]);
   root.appendChild(backupCard);
+
+  // ---- Auto-backup (linked file) ----
+  // Desktop-Chromium-only (File System Access API — see CLAUDE.md §17).
+  // Once linked, db.js silently rewrites this file after every save.
+  const autoBackupSupported = typeof window.showSaveFilePicker === 'function';
+  const autoBackupStatus = el('p', { class: 'field-hint' }, 'Checking…');
+  const linkBtn = el('button', { type: 'button', class: 'btn btn-secondary' }, 'Link backup file…');
+  const reauthorizeBtn = el('button', { type: 'button', class: 'btn btn-secondary', hidden: true }, 'Re-authorize access');
+  const unlinkBtn = el('button', { type: 'button', class: 'btn btn-danger', hidden: true }, 'Unlink');
+
+  async function refreshAutoBackupStatus() {
+    if (!autoBackupSupported) {
+      autoBackupStatus.textContent = 'Not supported in this browser — desktop Chrome/Edge only. Use manual Export above.';
+      linkBtn.hidden = true;
+      reauthorizeBtn.hidden = true;
+      unlinkBtn.hidden = true;
+      return;
+    }
+    const handle = await getLinkedBackupHandle();
+    if (!handle) {
+      autoBackupStatus.textContent = 'Not linked — backup stays manual (Export above).';
+      linkBtn.hidden = false;
+      reauthorizeBtn.hidden = true;
+      unlinkBtn.hidden = true;
+      return;
+    }
+    linkBtn.hidden = true;
+    unlinkBtn.hidden = false;
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'granted') {
+      autoBackupStatus.textContent = `Linked to "${handle.name}" — every save overwrites it automatically.`;
+      reauthorizeBtn.hidden = true;
+    } else {
+      autoBackupStatus.textContent = `Linked to "${handle.name}", but access needs to be re-authorized (e.g. after a browser restart).`;
+      reauthorizeBtn.hidden = false;
+    }
+  }
+
+  linkBtn.addEventListener('click', async () => {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'ext-trkr.json',
+        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+      });
+      await setLinkedBackupHandle(handle);
+      await syncLinkedBackupFile();
+      notify('Backup file linked — every save will overwrite it from now on', 'success');
+    } catch (err) {
+      if (err.name !== 'AbortError') notify(err.message, 'error');
+    }
+    await refreshAutoBackupStatus();
+  });
+
+  reauthorizeBtn.addEventListener('click', async () => {
+    const handle = await getLinkedBackupHandle();
+    if (handle) {
+      try {
+        const perm = await handle.requestPermission({ mode: 'readwrite' });
+        if (perm === 'granted') {
+          await syncLinkedBackupFile();
+          notify('Access re-authorized', 'success');
+        } else {
+          notify('Permission was not granted', 'error');
+        }
+      } catch (err) {
+        notify(err.message, 'error');
+      }
+    }
+    await refreshAutoBackupStatus();
+  });
+
+  unlinkBtn.addEventListener('click', async () => {
+    await clearLinkedBackupHandle();
+    notify('Backup file unlinked', 'success');
+    await refreshAutoBackupStatus();
+  });
+
+  const autoBackupCard = el('div', { class: 'card' }, [
+    el('h3', {}, 'Auto-backup'),
+    autoBackupStatus,
+    el('div', { class: 'form-actions' }, [linkBtn, reauthorizeBtn, unlinkBtn]),
+  ]);
+  root.appendChild(autoBackupCard);
+  await refreshAutoBackupStatus();
 
   // ---- Accounts ----
   const accountsList = el('div', { class: 'settings-list' });

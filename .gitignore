@@ -3,6 +3,7 @@ ledger-import.json
 ledger-import-skipped.md
 money.ldg
 expense-tracker-backup*.json
+ext-trkr.json
 
 # Python bytecode cache
 __pycache__/
