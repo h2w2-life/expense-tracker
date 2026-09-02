@@ -68,12 +68,18 @@ export function mountTransactionFilters(container, { accounts, tags, lineItems, 
   const accountsById = new Map(accounts.map((a) => [a.id, a]));
   let changeHandler = () => {};
 
+  // Needed before periodModeSelect so the "Statement cycle" option can be
+  // disabled up front when it wouldn't do anything — no account has a
+  // statementCycleStartDay set, so that period mode would silently return
+  // the whole-history range regardless of which month is picked.
+  const cycleAccounts = accounts.filter((a) => a.statementCycleStartDay);
+
   const periodModeSelect = el('select', {}, [
     el('option', { value: 'month' }, 'Calendar month'),
-    el('option', { value: 'cycle' }, 'Statement cycle'),
+    el('option', { value: 'cycle', disabled: cycleAccounts.length === 0 }, 'Statement cycle'),
     el('option', { value: 'all' }, 'All time'),
   ]);
-  periodModeSelect.value = initial.periodMode || 'month';
+  periodModeSelect.value = initial.periodMode === 'cycle' && cycleAccounts.length === 0 ? 'month' : initial.periodMode || 'month';
 
   const monthInput = el('input', { type: 'month', value: initial.month || currentMonthValue() });
   const prevMonthBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-icon month-nav-btn' }, '◀');
@@ -88,7 +94,6 @@ export function mountTransactionFilters(container, { accounts, tags, lineItems, 
   prevMonthBtn.addEventListener('click', () => shiftMonth(-1));
   nextMonthBtn.addEventListener('click', () => shiftMonth(1));
 
-  const cycleAccounts = accounts.filter((a) => a.statementCycleStartDay);
   const cycleAccountSelect = el('select', {}, cycleAccounts.map((a) => el('option', { value: String(a.id) }, a.name)));
   if (initial.cycleAccountId) cycleAccountSelect.value = initial.cycleAccountId;
 
