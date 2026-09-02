@@ -628,24 +628,33 @@ button.tag-chip {
    own amount-text width, so bars drifted and weren't the same length. */
 .tag-chart {
   width: 100%;
-  table-layout: fixed;
   border-collapse: collapse;
   margin-top: var(--space-3);
 }
 
 .tag-chart td {
   border: none;
-  padding: var(--space-1) 0;
+  padding-top: var(--space-1);
+  padding-bottom: var(--space-1);
   vertical-align: middle;
 }
 
 .tag-chart-cell-remove {
   width: 36px;
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .tag-chart-cell-label {
-  width: 90px;
   padding-right: var(--space-2);
+  white-space: nowrap;
+}
+
+.tag-chart-cell-bar {
+  width: 100%;
+  min-width: 40px;
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
 }
 
 .tag-chart-cell-amount {
@@ -675,10 +684,7 @@ button.tag-chip {
 
 .tag-chart-label {
   display: block;
-  width: 100%;
   font-size: 0.85rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
 }
