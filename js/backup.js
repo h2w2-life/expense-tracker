@@ -16,7 +16,12 @@ export async function exportToFile() {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // Revoking the object URL immediately can race the browser's own
+  // handling of the download (which isn't always synchronous, especially
+  // on mobile) — the click "succeeds" from this function's point of view
+  // either way, so a too-early revoke silently breaks the actual download
+  // with no error to catch. Give the browser a moment first.
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 export async function importFromFile(file) {
