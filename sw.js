@@ -4,7 +4,7 @@
 // actually offline), which is what makes the installed PWA still usable
 // with no server running.
 
-const CACHE_NAME = 'expense-tracker-v1';
+const CACHE_NAME = 'expense-tracker-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -19,6 +19,8 @@ const APP_SHELL = [
   './js/entry.js',
   './js/list.js',
   './js/analysis.js',
+  './js/filters.js',
+  './js/recurring.js',
   './js/backup.js',
   './js/settings.js',
   './icons/icon.svg',
