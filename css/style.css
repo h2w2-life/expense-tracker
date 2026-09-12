@@ -317,7 +317,17 @@ input.field-invalid {
 }
 
 .line-item-remove {
-  align-self: flex-end;
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+  background: var(--color-surface);
 }
 
 /* ---------- Tag chip input ---------- */

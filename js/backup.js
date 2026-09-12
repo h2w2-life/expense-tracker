@@ -8,7 +8,13 @@ import { exportAll, importAll } from './db.js';
 export async function exportToFile() {
   const data = await exportAll();
   const json = JSON.stringify(data, null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
+  // `application/octet-stream` rather than `application/json` is
+  // deliberate: some mobile browsers try to open/preview a recognized JSON
+  // blob instead of force-downloading it, and that alternate path often
+  // ignores the anchor's `download` filename entirely, substituting its own
+  // timestamp-based name instead. An opaque binary type reliably triggers a
+  // plain download that honors `download` everywhere.
+  const blob = new Blob([json], { type: 'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
