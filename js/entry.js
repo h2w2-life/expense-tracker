@@ -87,6 +87,14 @@ export async function mountEntryForm(container, { notify, editingId, onSaved, on
   const totalInput = el('input', { type: 'text', inputmode: 'decimal', placeholder: 'Stated total (blank = auto)' });
   bindAmountField(totalInput);
 
+  // Applied to every line item at save time (merged with that item's own
+  // tags, deduped) — a convenience for the common case of one shared tag
+  // set, not a separate stored concept: there's no transaction-level tags
+  // field in the data model, so editing an existing transaction can't
+  // reconstruct "what was entered here" and leaves this blank.
+  const txnTagContainer = el('div', { class: 'tag-input-mount' });
+  const txnTagWidget = mountTagInput(txnTagContainer);
+
   const lineItemsContainer = el('div', { class: 'line-items' });
   const rows = [];
 
@@ -137,6 +145,7 @@ export async function mountEntryForm(container, { notify, editingId, onSaved, on
     el('div', { class: 'form-grid' }, [field('Account', accountSelect, toggleNewAccountBtn), field('Stated total', totalInput)]),
     newAccountPanel,
     field('Description', descInput),
+    el('div', { class: 'field field-tags' }, [el('label', {}, 'Tags (applied to every line item)'), txnTagContainer]),
     el('h3', {}, 'Line items'),
     lineItemsContainer,
     addLineItemBtn,
@@ -230,9 +239,10 @@ export async function mountEntryForm(container, { notify, editingId, onSaved, on
       return;
     }
 
+    const txnTagNames = txnTagWidget.getTagNames();
     const lineItemsPayload = [];
     for (let i = 0; i < rows.length; i++) {
-      const tagNames = rows[i].tagWidget.getTagNames();
+      const tagNames = [...new Set([...txnTagNames, ...rows[i].tagWidget.getTagNames()])];
       if (tagNames.length === 0) {
         notify('Every line item needs at least one tag', 'error');
         return;
