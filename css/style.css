@@ -633,6 +633,19 @@ button.tag-chip {
   border-bottom: 1px solid var(--color-border);
 }
 
+.tag-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  font-size: 0.9rem;
+}
+
+.tag-breadcrumb-sep {
+  color: var(--color-muted);
+}
+
 /* A real table so the bar-track column is the same width/position on every
    row — flex/grid rows sized themselves independently based on that row's
    own amount-text width, so bars drifted and weren't the same length. */

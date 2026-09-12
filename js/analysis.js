@@ -33,7 +33,13 @@ export async function render(container, ctx) {
 
   let summaryExpanded = false;
   let chartExpanded = false;
-  const hiddenTagIds = new Set();
+  let hiddenTagIds = new Set();
+  // Tags drilled into, in order (most recent last) — clicking a tag in the
+  // chart doesn't navigate away anymore, it narrows the chart to line items
+  // that also carry this tag and lists the *other* tags still present on
+  // them. Independent of the filter bar's own AND/NOT tags above; the two
+  // only get combined when "See transactions" hands off to Transactions.
+  let drillTagIds = [];
 
   function matchingLineItems() {
     const items = [];
@@ -46,7 +52,7 @@ export async function render(container, ctx) {
   }
 
   function renderAll() {
-    const lineItems = matchingLineItems();
+    const lineItems = matchingLineItems().filter((li) => drillTagIds.every((id) => li.tagIds.includes(id)));
 
     renderSummary(summarySection, lineItems, accountsById, {
       expanded: summaryExpanded,
@@ -60,6 +66,8 @@ export async function render(container, ctx) {
 
     renderTagChart(chartSection, lineItems, tagsById, hiddenTagIds, {
       expanded: chartExpanded,
+      excludeTagIds: drillTagIds,
+      breadcrumbNames: drillTagIds.map((id) => tagsById.get(id)).filter(Boolean),
       onToggle: () => {
         chartExpanded = !chartExpanded;
         renderAll();
@@ -73,16 +81,32 @@ export async function render(container, ctx) {
         renderAll();
       },
       onTagClick: (tagId) => {
-        // Carry the Dashboard's current filters over to Transactions,
-        // adding this tag to the ALL set (unless it's already there).
+        drillTagIds = [...drillTagIds, tagId];
+        hiddenTagIds = new Set();
+        renderAll();
+      },
+      onBreadcrumbClick: (index) => {
+        // index -1 is "All" (the root — clear the drill entirely);
+        // otherwise keep everything up to and including that crumb.
+        drillTagIds = index < 0 ? [] : drillTagIds.slice(0, index + 1);
+        hiddenTagIds = new Set();
+        renderAll();
+      },
+      onSeeTransactions: () => {
+        // Carries the filter bar's own state over to Transactions, plus
+        // whatever's been drilled into here, merged into the ALL set.
         const state = filters.getState();
-        const andTagIds = state.andTagIds.includes(tagId) ? state.andTagIds : [...state.andTagIds, tagId];
+        const andTagIds = [...new Set([...state.andTagIds, ...drillTagIds])];
         navigate('list', { filters: { ...state, andTagIds } });
       },
     });
   }
 
-  filters.onChange(renderAll);
+  filters.onChange(() => {
+    drillTagIds = [];
+    hiddenTagIds = new Set();
+    renderAll();
+  });
   renderAll();
 }
 
@@ -168,7 +192,13 @@ function renderSummary(section, lineItems, accountsById, { expanded, onToggle, o
 // quick glance rather than a long scroll — expanding shows everything.
 const TAG_CHART_COLLAPSED_THRESHOLD_PAISE = 500000;
 
-function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { expanded, onToggle, onHide, onReset, onTagClick }) {
+function renderTagChart(
+  section,
+  lineItems,
+  tagsById,
+  hiddenTagIds,
+  { expanded, onToggle, onHide, onReset, onTagClick, excludeTagIds, breadcrumbNames, onBreadcrumbClick, onSeeTransactions }
+) {
   section.innerHTML = '';
   section.classList.toggle('expanded', expanded);
 
@@ -179,6 +209,33 @@ function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { expanded, 
   header.addEventListener('click', onToggle);
   section.appendChild(header);
 
+  if (breadcrumbNames.length > 0) {
+    const crumbs = el('div', { class: 'tag-breadcrumb' });
+    const allCrumb = el('button', { type: 'button', class: 'link-chip' }, 'All');
+    allCrumb.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onBreadcrumbClick(-1);
+    });
+    crumbs.appendChild(allCrumb);
+    breadcrumbNames.forEach((name, i) => {
+      crumbs.appendChild(el('span', { class: 'tag-breadcrumb-sep' }, '›'));
+      const crumbBtn = el('button', { type: 'button', class: 'link-chip' }, name);
+      crumbBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onBreadcrumbClick(i);
+      });
+      crumbs.appendChild(crumbBtn);
+    });
+    section.appendChild(crumbs);
+
+    const seeTxnsBtn = el('button', { type: 'button', class: 'btn btn-primary' }, 'See transactions');
+    seeTxnsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onSeeTransactions();
+    });
+    section.appendChild(seeTxnsBtn);
+  }
+
   if (hiddenTagIds.size > 0) {
     const resetBtn = el('button', { type: 'button', class: 'btn btn-link' }, `Reset (${hiddenTagIds.size} hidden)`);
     resetBtn.addEventListener('click', (e) => {
@@ -188,9 +245,11 @@ function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { expanded, 
     section.appendChild(resetBtn);
   }
 
+  const excludeSet = new Set(excludeTagIds);
   const totals = new Map();
   for (const li of lineItems) {
     for (const tagId of li.tagIds) {
+      if (excludeSet.has(tagId)) continue;
       totals.set(tagId, (totals.get(tagId) || 0) + li.amount);
     }
   }
@@ -201,7 +260,13 @@ function renderTagChart(section, lineItems, tagsById, hiddenTagIds, { expanded, 
     .sort((a, b) => b.amount - a.amount);
 
   if (allEntries.length === 0) {
-    section.appendChild(el('p', { class: 'empty-state' }, 'No matching line items.'));
+    // Two different empty states look identical otherwise: genuinely no
+    // matching line items, vs. matching items that exist but carry no tags
+    // beyond what's already been drilled into/excluded (a leaf — nothing
+    // left to break down by tag). The breadcrumb's own "See transactions"
+    // button above (shown at every drill depth) is the way to look at them.
+    const message = lineItems.length === 0 ? 'No matching line items.' : 'No further tags to break this down by.';
+    section.appendChild(el('p', { class: 'empty-state' }, message));
     return;
   }
 
