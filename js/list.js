@@ -122,6 +122,7 @@ export async function render(container, ctx) {
           addTagFilter: filters.addAndTagFilter,
           getFilters: currentFiltersSnapshot,
           getAllTxns: () => txns,
+          matchesLineItem: filters.matchesLineItem,
         })
       );
     }
@@ -187,10 +188,17 @@ function renderReconciliation(section, txns, accountsById, navigate, { expanded,
   section.appendChild(list);
 }
 
-function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, addTagFilter, getFilters, getAllTxns }) {
+function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, addTagFilter, getFilters, getAllTxns, matchesLineItem }) {
   const sum = txn.lineItems.reduce((s, li) => s + li.amount, 0);
   const mismatch = txn.statedTotal != null && sum !== txn.statedTotal;
   const account = accountsById.get(txn.accountId);
+
+  // A split transaction can appear in the list because just one of its
+  // items matches the active tag filters — the breakdown below should only
+  // show that matching item, not every sibling under the same parent.
+  // Header-level facts (total, split badge, reconciliation) still describe
+  // the whole transaction regardless.
+  const displayLineItems = txn.lineItems.filter((li) => matchesLineItem(li, txn));
 
   // Split transactions (more than one line item) are worth seeing at a
   // glance without an extra click; single-item ones stay collapsed since
@@ -235,10 +243,10 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, 
   header.addEventListener('click', () => row.classList.toggle('expanded'));
   row.appendChild(header);
 
-  // All tags across every line item (not just the first), deduped and
-  // alphabetized — a split transaction's tags are otherwise invisible
+  // All tags across every matching line item (not just the first), deduped
+  // and alphabetized — a split transaction's tags are otherwise invisible
   // without expanding it.
-  const allTagIds = [...new Set(txn.lineItems.flatMap((li) => li.tagIds))].filter((id) => tagsById.has(id));
+  const allTagIds = [...new Set(displayLineItems.flatMap((li) => li.tagIds))].filter((id) => tagsById.has(id));
   if (allTagIds.length > 0) {
     allTagIds.sort((a, b) => tagsById.get(a).localeCompare(tagsById.get(b)));
     const tagsLine = el('div', { class: 'txn-row-all-tags' });
@@ -254,7 +262,7 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, 
   }
 
   const itemsList = el('ul', { class: 'txn-line-items' });
-  for (const li of txn.lineItems) {
+  for (const li of displayLineItems) {
     const tagChips = li.tagIds
       .filter((id) => tagsById.has(id))
       .map((id) => {
