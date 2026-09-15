@@ -11,7 +11,7 @@ import { listAccounts, findOrCreateTags, createRecurringTransactions, saveTransa
 import { rupeesToPaise, paiseToInputValue } from './money.js';
 import { tryEvaluate, bindAmountField } from './calc.js';
 import { mountTagInput } from './tags.js';
-import { el, field } from './dom.js';
+import { el, field, mountDateInputWithNav } from './dom.js';
 
 function todayISO() {
   const d = new Date();
@@ -49,7 +49,7 @@ export function mountRecurringButton({ notify, onCreated }) {
   function buildForm(accounts) {
     dialog.innerHTML = '';
 
-    const dateInput = el('input', { type: 'date', required: true, value: todayISO() });
+    const { dateInput, row: dateRow } = mountDateInputWithNav(todayISO());
     const typeSelect = el('select', {}, [
       el('option', { value: 'expense' }, 'Expense'),
       el('option', { value: 'income' }, 'Income'),
@@ -79,7 +79,7 @@ export function mountRecurringButton({ notify, onCreated }) {
     const form = el('form', { class: 'entry-form' }, [
       el('h3', {}, 'Recurring transaction'),
       el('p', { class: 'field-hint' }, 'Creates every occurrence up front as its own transaction. No splits.'),
-      el('div', { class: 'form-grid' }, [field('Date (first occurrence)', dateInput), field('Type', typeSelect)]),
+      el('div', { class: 'form-grid' }, [field('Date (first occurrence)', dateRow), field('Type', typeSelect)]),
       el('div', { class: 'form-grid' }, [field('Account', accountSelect), field('Amount', amountInput)]),
       field('Description', descInput),
       el('div', { class: 'field field-tags' }, [el('label', {}, 'Tags'), tagContainer]),

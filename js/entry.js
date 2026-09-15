@@ -16,7 +16,7 @@ import {
 import { rupeesToPaise, paiseToInputValue } from './money.js';
 import { tryEvaluate, bindAmountField } from './calc.js';
 import { mountTagInput } from './tags.js';
-import { el, field } from './dom.js';
+import { el, field, mountDateInputWithNav } from './dom.js';
 
 function todayISO() {
   const d = new Date();
@@ -38,7 +38,7 @@ export async function mountEntryForm(container, { notify, editingId, onSaved, on
 
   let accounts = await listAccounts();
 
-  const dateInput = el('input', { type: 'date', required: true, value: todayISO() });
+  const { dateInput, row: dateRow } = mountDateInputWithNav(todayISO());
   const typeSelect = el('select', {}, [
     el('option', { value: 'expense' }, 'Expense'),
     el('option', { value: 'income' }, 'Income'),
@@ -141,7 +141,7 @@ export async function mountEntryForm(container, { notify, editingId, onSaved, on
   cancelBtn.addEventListener('click', onCancel);
 
   form.append(
-    el('div', { class: 'form-grid' }, [field('Date', dateInput), field('Type', typeSelect)]),
+    el('div', { class: 'form-grid' }, [field('Date', dateRow), field('Type', typeSelect)]),
     el('div', { class: 'form-grid' }, [field('Account', accountSelect, toggleNewAccountBtn), field('Stated total', totalInput)]),
     newAccountPanel,
     field('Description', descInput),

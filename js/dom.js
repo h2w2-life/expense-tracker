@@ -49,3 +49,27 @@ export function field(labelText, inputEl, extra = []) {
   const label = el('label', { for: id }, labelText);
   return el('div', { class: 'field' }, [label, inputEl, ...[].concat(extra)]);
 }
+
+/**
+ * A `<input type="date">` with ◀/▶ buttons on either side that step it by
+ * one day — same interaction as the Month field's prev/next in filters.js,
+ * for the common case of "same day, one field off" repeat entry.
+ * @param {string} initialValue - YYYY-MM-DD
+ * @returns {{ dateInput: HTMLInputElement, row: HTMLElement }} `row` is what
+ *   to actually place in the form (e.g. via `field('Date', row)`).
+ */
+export function mountDateInputWithNav(initialValue) {
+  const dateInput = el('input', { type: 'date', required: true, value: initialValue });
+  const prevBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-icon date-nav-btn' }, '◀');
+  const nextBtn = el('button', { type: 'button', class: 'btn btn-secondary btn-icon date-nav-btn' }, '▶');
+  function shift(days) {
+    if (!dateInput.value) return;
+    const d = new Date(`${dateInput.value}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    dateInput.value = d.toISOString().slice(0, 10);
+  }
+  prevBtn.addEventListener('click', () => shift(-1));
+  nextBtn.addEventListener('click', () => shift(1));
+  const row = el('div', { class: 'month-field-row' }, [prevBtn, dateInput, nextBtn]);
+  return { dateInput, row };
+}
