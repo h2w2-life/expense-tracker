@@ -8,6 +8,7 @@ import { el, field } from './dom.js';
 import { mountTransactionFilters } from './filters.js';
 import { askSeriesScope, openSeriesFutureEditDialog, applySeriesFuturePatch, mountRecurringButton } from './recurring.js';
 import { mountAddButton } from './entry.js';
+import { mountTransferButton, openTransferEditDialog } from './transfer.js';
 
 export async function render(container, ctx) {
   const { notify, navigate, params = {} } = ctx;
@@ -23,6 +24,7 @@ export async function render(container, ctx) {
     el('div', { class: 'tab-actions' }, [
       mountAddButton({ notify, onSaved: () => refresh() }),
       mountRecurringButton({ notify, onCreated: () => refresh() }),
+      mountTransferButton({ notify, onSaved: () => refresh() }),
     ])
   );
 
@@ -221,13 +223,36 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, 
     navigate('list', { accountId: txn.accountId });
   });
 
-  const header = el('div', { class: 'txn-row-header' }, [
-    el('span', { class: 'txn-date' }, txn.date),
-    accountLink,
-    el('span', { class: 'txn-desc' }, displayDesc),
-    el('span', { class: `txn-amount ${txn.type === 'income' ? 'amount-income' : 'amount-expense'}` }, formatINR(txn.statedTotal ?? sum)),
-  ]);
+  const headerParts = [el('span', { class: 'txn-date' }, txn.date), accountLink];
 
+  if (txn.type === 'transfer') {
+    const toAccount = accountsById.get(txn.toAccountId);
+    const toLink = el(
+      'button',
+      { type: 'button', class: 'txn-account link-chip' },
+      toAccount ? toAccount.name : '(deleted account)'
+    );
+    toLink.addEventListener('click', (e) => {
+      e.stopPropagation();
+      navigate('list', { accountId: txn.toAccountId });
+    });
+    headerParts.push(el('span', { class: 'txn-transfer-arrow' }, '→'), toLink);
+  }
+
+  headerParts.push(
+    el('span', { class: 'txn-desc' }, displayDesc),
+    el(
+      'span',
+      { class: `txn-amount ${txn.type === 'income' ? 'amount-income' : txn.type === 'transfer' ? 'amount-transfer' : 'amount-expense'}` },
+      formatINR(txn.statedTotal ?? sum)
+    )
+  );
+
+  const header = el('div', { class: 'txn-row-header' }, headerParts);
+
+  if (txn.type === 'transfer') {
+    header.appendChild(el('span', { class: 'badge badge-transfer' }, 'Transfer'));
+  }
   if (txn.lineItems.length > 1) {
     header.appendChild(el('span', { class: 'badge badge-split' }, `Split (${txn.lineItems.length})`));
   }
@@ -293,6 +318,10 @@ function renderTxnRow(txn, accountsById, tagsById, { notify, navigate, refresh, 
   const editBtn = el('button', { type: 'button', class: 'btn btn-secondary' }, 'Edit');
   editBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
+    if (txn.type === 'transfer') {
+      openTransferEditDialog({ notify, txn, onSaved: refresh });
+      return;
+    }
     if (txn.seriesId == null) {
       navigate('entry', { editId: txn.id, filters: getFilters() });
       return;

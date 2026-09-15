@@ -104,9 +104,10 @@ export function mountTransactionFilters(container, { accounts, tags, lineItems, 
   accountFilterSelect.value = initial.accountId != null ? String(initial.accountId) : '';
 
   const typeFilterSelect = el('select', {}, [
-    el('option', { value: '' }, 'Expense + income'),
+    el('option', { value: '' }, 'All types'),
     el('option', { value: 'expense' }, 'Expense only'),
     el('option', { value: 'income' }, 'Income only'),
+    el('option', { value: 'transfer' }, 'Transfer only'),
   ]);
   typeFilterSelect.value = initial.type || '';
 
@@ -189,7 +190,9 @@ export function mountTransactionFilters(container, { accounts, tags, lineItems, 
     const accountFilter = accountFilterSelect.value ? Number(accountFilterSelect.value) : null;
     const typeFilter = typeFilterSelect.value || null;
     if (range && (txn.date < range.start || txn.date > range.end)) return false;
-    if (accountFilter && txn.accountId !== accountFilter) return false;
+    // A transfer touches two accounts — filtering by either side's account
+    // should surface it, not just the "from" side stored in accountId.
+    if (accountFilter && txn.accountId !== accountFilter && txn.toAccountId !== accountFilter) return false;
     if (typeFilter && txn.type !== typeFilter) return false;
     return true;
   }

@@ -473,6 +473,14 @@ button.tag-chip {
   color: var(--color-expense);
 }
 
+.amount-transfer {
+  color: var(--color-muted);
+}
+
+.txn-transfer-arrow {
+  color: var(--color-muted);
+}
+
 .badge {
   font-size: 0.7rem;
   padding: 0.2rem 0.5rem;
@@ -504,6 +512,16 @@ button.tag-chip {
   font-weight: 600;
   margin-left: var(--space-2);
   border: 1px solid var(--color-border);
+}
+
+.badge-transfer {
+  background: var(--color-primary-light);
+  color: var(--color-primary-dark);
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  margin-left: var(--space-2);
 }
 .txn-row-all-tags {
   display: flex;

@@ -144,7 +144,7 @@ export async function updateAccount(id, patch) {
 
 export async function deleteAccount(id) {
   const transactions = await getAll('transactions');
-  if (transactions.some((t) => t.accountId === id)) {
+  if (transactions.some((t) => t.accountId === id || t.toAccountId === id)) {
     throw new Error('Cannot delete an account that has transactions. Reassign or delete those first.');
   }
   await remove('accounts', id);
@@ -273,11 +273,21 @@ export async function listTransactionsWithLineItems() {
  * whatever seriesId/seriesIndex it already had (see entry.js) or the edit
  * will silently detach it from its series, since this always fully replaces
  * the stored record rather than merging into it.
+ *
+ * `type: 'transfer'` moves money between two of the user's own accounts —
+ * `accountId` is the source, `toAccountId` (required, must differ from
+ * accountId) is the destination. Transfers are excluded from income/expense
+ * totals everywhere (Summary, Dashboard) simply by not being 'income' or
+ * 'expense' — no extra filtering needed for that.
  */
-export async function saveTransaction({ id, date, type, accountId, description, statedTotal, seriesId, seriesIndex }, lineItems) {
+export async function saveTransaction({ id, date, type, accountId, toAccountId, description, statedTotal, seriesId, seriesIndex }, lineItems) {
   if (!date) throw new Error('Date is required');
-  if (type !== 'expense' && type !== 'income') throw new Error('Type must be "expense" or "income"');
+  if (type !== 'expense' && type !== 'income' && type !== 'transfer') throw new Error('Type must be "expense", "income", or "transfer"');
   if (!accountId) throw new Error('Account is required');
+  if (type === 'transfer') {
+    if (!toAccountId) throw new Error('A destination account is required for a transfer');
+    if (toAccountId === accountId) throw new Error('Transfer source and destination accounts must be different');
+  }
   if (!Array.isArray(lineItems) || lineItems.length === 0) throw new Error('At least one line item is required');
   for (const li of lineItems) {
     if (!Number.isInteger(li.amount)) throw new Error('Every line item needs an amount');
@@ -291,6 +301,9 @@ export async function saveTransaction({ id, date, type, accountId, description, 
   const liStore = tx.objectStore('lineItems');
 
   const txnRecord = { date, type, accountId, description: description || '', statedTotal };
+  if (type === 'transfer') {
+    txnRecord.toAccountId = toAccountId;
+  }
   if (seriesId != null) {
     txnRecord.seriesId = seriesId;
     txnRecord.seriesIndex = seriesIndex;
